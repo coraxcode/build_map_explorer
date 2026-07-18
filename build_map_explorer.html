@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
-<title>BUILD / Mapster32 MAP Explorer — Audited Palette Build</title>
+<title>BUILD / Mapster32 MAP Explorer — Sprite-Accurate Depth-Stable Build</title>
 <style>
 /* ---------- Design tokens: a dark "editor console" grounded in BUILD 2D mode ---------- */
 :root{
@@ -219,11 +219,17 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 </div>
 
 <script>
+/*! Earcut 2.2.4 — Copyright (c) 2016, Mapbox — ISC License.
+    Embedded locally for robust polygon triangulation with inner loops/holes. */
+!function(e){"object"==typeof exports&&"undefined"!=typeof module?module.exports=e():"function"==typeof define&&define.amd?define([],e):("undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof self?self:this).earcut=e()}(function(){return function r(x,i,u){function f(n,e){if(!i[n]){if(!x[n]){var t="function"==typeof require&&require;if(!e&&t)return t(n,!0);if(o)return o(n,!0);throw(e=new Error("Cannot find module '"+n+"'")).code="MODULE_NOT_FOUND",e}t=i[n]={exports:{}},x[n][0].call(t.exports,function(e){return f(x[n][1][e]||e)},t,t.exports,r,x,i,u)}return i[n].exports}for(var o="function"==typeof require&&require,e=0;e<u.length;e++)f(u[e]);return f}({1:[function(e,n,t){"use strict";function r(e,n,t){t=t||2;var r,x,i,u,f,o=n&&n.length,v=o?n[0]*t:e.length,p=s(e,0,v,t,!0),y=[];if(p&&p.next!==p.prev){if(o&&(p=function(e,n,t,r){var x,i,u,f,o=[];for(x=0,i=n.length;x<i;x++)f=n[x]*r,u=x<i-1?n[x+1]*r:e.length,(f=s(e,f,u,r,!1))===f.next&&(f.steiner=!0),o.push(function(e){var n=e,t=e;for(;(n.x<t.x||n.x===t.x&&n.y<t.y)&&(t=n),n=n.next,n!==e;);return t}(f));for(o.sort(c),x=0;x<o.length;x++)t=function(e,n){var t=function(e,n){var t,r=n,x=e.x,i=e.y,u=-1/0;do{if(i<=r.y&&i>=r.next.y&&r.next.y!==r.y){var f=r.x+(i-r.y)*(r.next.x-r.x)/(r.next.y-r.y);if(f<=x&&u<f&&(u=f,t=r.x<r.next.x?r:r.next,f===x))return t}}while(r=r.next,r!==n);if(!t)return null;var o,v=t,p=t.x,y=t.y,a=1/0;r=t;for(;x>=r.x&&r.x>=p&&x!==r.x&&D(i<y?x:u,i,p,y,i<y?u:x,i,r.x,r.y)&&(o=Math.abs(i-r.y)/(x-r.x),_(r,e)&&(o<a||o===a&&(r.x>t.x||r.x===t.x&&function(e,n){return E(e.prev,e,n.prev)<0&&E(n.next,e,e.next)<0}(t,r)))&&(t=r,a=o)),r=r.next,r!==v;);return t}(e,n);if(!t)return n;n=j(t,e);return q(n,n.next),q(t,t.next)}(o[x],t);return t}(e,n,p,t)),e.length>80*t){for(var a=r=e[0],l=x=e[1],h=t;h<v;h+=t)(i=e[h])<a&&(a=i),(u=e[h+1])<l&&(l=u),r<i&&(r=i),x<u&&(x=u);f=0!==(f=Math.max(r-a,x-l))?32767/f:0}O(p,y,t,a,l,f,0)}return y}function s(e,n,t,r,x){var i,u;if(x===0<d(e,n,t,r))for(i=n;i<t;i+=r)u=f(i,e[i],e[i+1],u);else for(i=t-r;n<=i;i-=r)u=f(i,e[i],e[i+1],u);return u&&N(u,u.next)&&(C(u),u=u.next),u}function q(e,n){if(!e)return e;n=n||e;var t,r=e;do{if(t=!1,r.steiner||!N(r,r.next)&&0!==E(r.prev,r,r.next))r=r.next;else{if(C(r),(r=n=r.prev)===r.next)break;t=!0}}while(t||r!==n);return n}function O(e,n,t,r,x,i,u){if(e){if(!u&&i){for(var f=e,o=r,v=x,p=i,y=f;0===y.z&&(y.z=k(y.x,y.y,o,v,p)),y.prevZ=y.prev,y.nextZ=y.next,(y=y.next)!==f;);y.prevZ.nextZ=null,y.prevZ=null;var a,l,h,s,c,d,Z,g,w=y,M=1;do{for(l=w,c=w=null,d=0;l;){for(d++,h=l,a=Z=0;a<M&&(Z++,h=h.nextZ);a++);for(g=M;0<Z||0<g&&h;)0!==Z&&(0===g||!h||l.z<=h.z)?(l=(s=l).nextZ,Z--):(h=(s=h).nextZ,g--),c?c.nextZ=s:w=s,s.prevZ=c,c=s;l=h}}while(c.nextZ=null,M*=2,1<d)}for(var b,m,z=e;e.prev!==e.next;)if(b=e.prev,m=e.next,i?function(e,n,t,r){var x=e.prev,i=e,u=e.next;if(0<=E(x,i,u))return;var f=x.x,o=i.x,v=u.x,p=x.y,y=i.y,a=u.y,l=f<o?f<v?f:v:o<v?o:v,h=p<y?p<a?p:a:y<a?y:a,s=o<f?v<f?f:v:v<o?o:v,c=y<p?a<p?p:a:a<y?y:a,d=k(l,h,n,t,r),Z=k(s,c,n,t,r),g=e.prevZ,w=e.nextZ;for(;g&&g.z>=d&&w&&w.z<=Z;){if(g.x>=l&&g.x<=s&&g.y>=h&&g.y<=c&&g!==x&&g!==u&&D(f,p,o,y,v,a,g.x,g.y)&&0<=E(g.prev,g,g.next))return;if(g=g.prevZ,w.x>=l&&w.x<=s&&w.y>=h&&w.y<=c&&w!==x&&w!==u&&D(f,p,o,y,v,a,w.x,w.y)&&0<=E(w.prev,w,w.next))return;w=w.nextZ}for(;g&&g.z>=d;){if(g.x>=l&&g.x<=s&&g.y>=h&&g.y<=c&&g!==x&&g!==u&&D(f,p,o,y,v,a,g.x,g.y)&&0<=E(g.prev,g,g.next))return;g=g.prevZ}for(;w&&w.z<=Z;){if(w.x>=l&&w.x<=s&&w.y>=h&&w.y<=c&&w!==x&&w!==u&&D(f,p,o,y,v,a,w.x,w.y)&&0<=E(w.prev,w,w.next))return;w=w.nextZ}return 1}(e,r,x,i):function(e){var n=e.prev,t=e,e=e.next;if(0<=E(n,t,e))return;var r=n.x,x=t.x,i=e.x,u=n.y,f=t.y,o=e.y,v=r<x?r<i?r:i:x<i?x:i,p=u<f?u<o?u:o:f<o?f:o,y=x<r?i<r?r:i:i<x?x:i,a=f<u?o<u?u:o:o<f?f:o,l=e.next;for(;l!==n;){if(l.x>=v&&l.x<=y&&l.y>=p&&l.y<=a&&D(r,u,x,f,i,o,l.x,l.y)&&0<=E(l.prev,l,l.next))return;l=l.next}return 1}(e))n.push(b.i/t|0),n.push(e.i/t|0),n.push(m.i/t|0),C(e),e=m.next,z=m.next;else if((e=m)===z){u?1===u?O(e=function(e,n,t){var r=e;do{var x=r.prev,i=r.next.next}while(!N(x,i)&&U(x,r,r.next,i)&&_(x,i)&&_(i,x)&&(n.push(x.i/t|0),n.push(r.i/t|0),n.push(i.i/t|0),C(r),C(r.next),r=e=i),r=r.next,r!==e);return q(r)}(q(e),n,t),n,t,r,x,i,2):2===u&&function(e,n,t,r,x,i){var u=e;do{for(var f,o=u.next.next;o!==u.prev;){if(u.i!==o.i&&function(e,n){return e.next.i!==n.i&&e.prev.i!==n.i&&!function(e,n){var t=e;do{if(t.i!==e.i&&t.next.i!==e.i&&t.i!==n.i&&t.next.i!==n.i&&U(t,t.next,e,n))return 1}while(t=t.next,t!==e);return}(e,n)&&(_(e,n)&&_(n,e)&&function(e,n){var t=e,r=!1,x=(e.x+n.x)/2,i=(e.y+n.y)/2;for(;t.y>i!=t.next.y>i&&t.next.y!==t.y&&x<(t.next.x-t.x)*(i-t.y)/(t.next.y-t.y)+t.x&&(r=!r),t=t.next,t!==e;);return r}(e,n)&&(E(e.prev,e,n.prev)||E(e,n.prev,n))||N(e,n)&&0<E(e.prev,e,e.next)&&0<E(n.prev,n,n.next))}(u,o))return f=j(u,o),u=q(u,u.next),f=q(f,f.next),O(u,n,t,r,x,i,0),O(f,n,t,r,x,i,0);o=o.next}}while(u=u.next,u!==e)}(e,n,t,r,x,i):O(q(e),n,t,r,x,i,1);break}}}function c(e,n){return e.x-n.x}function k(e,n,t,r,x){return(e=1431655765&((e=858993459&((e=252645135&((e=16711935&((e=(e-t)*x|0)|e<<8))|e<<4))|e<<2))|e<<1))|(n=1431655765&((n=858993459&((n=252645135&((n=16711935&((n=(n-r)*x|0)|n<<8))|n<<4))|n<<2))|n<<1))<<1}function D(e,n,t,r,x,i,u,f){return(e-u)*(i-f)<=(x-u)*(n-f)&&(t-u)*(n-f)<=(e-u)*(r-f)&&(x-u)*(r-f)<=(t-u)*(i-f)}function E(e,n,t){return(n.y-e.y)*(t.x-n.x)-(n.x-e.x)*(t.y-n.y)}function N(e,n){return e.x===n.x&&e.y===n.y}function U(e,n,t,r){var x=v(E(e,n,t)),i=v(E(e,n,r)),u=v(E(t,r,e)),f=v(E(t,r,n));return x!==i&&u!==f||(0===x&&o(e,t,n)||(0===i&&o(e,r,n)||(0===u&&o(t,e,r)||!(0!==f||!o(t,n,r)))))}function o(e,n,t){return n.x<=Math.max(e.x,t.x)&&n.x>=Math.min(e.x,t.x)&&n.y<=Math.max(e.y,t.y)&&n.y>=Math.min(e.y,t.y)}function v(e){return 0<e?1:e<0?-1:0}function _(e,n){return E(e.prev,e,e.next)<0?0<=E(e,n,e.next)&&0<=E(e,e.prev,n):E(e,n,e.prev)<0||E(e,e.next,n)<0}function j(e,n){var t=new u(e.i,e.x,e.y),r=new u(n.i,n.x,n.y),x=e.next,i=n.prev;return(e.next=n).prev=e,(t.next=x).prev=t,(r.next=t).prev=r,(i.next=r).prev=i,r}function f(e,n,t,r){e=new u(e,n,t);return r?(e.next=r.next,(e.prev=r).next.prev=e,r.next=e):(e.prev=e).next=e,e}function C(e){e.next.prev=e.prev,e.prev.next=e.next,e.prevZ&&(e.prevZ.nextZ=e.nextZ),e.nextZ&&(e.nextZ.prevZ=e.prevZ)}function u(e,n,t){this.i=e,this.x=n,this.y=t,this.prev=null,this.next=null,this.z=0,this.prevZ=null,this.nextZ=null,this.steiner=!1}function d(e,n,t,r){for(var x=0,i=n,u=t-r;i<t;i+=r)x+=(e[u]-e[i])*(e[i+1]+e[u+1]),u=i;return x}n.exports=r,(n.exports.default=r).deviation=function(e,n,t,r){var x=n&&n.length,i=x?n[0]*t:e.length,u=Math.abs(d(e,0,i,t));if(x)for(var f=0,o=n.length;f<o;f++){var v=n[f]*t,p=f<o-1?n[f+1]*t:e.length;u-=Math.abs(d(e,v,p,t))}for(var y=0,f=0;f<r.length;f+=3){var a=r[f]*t,l=r[f+1]*t,h=r[f+2]*t;y+=Math.abs((e[a]-e[h])*(e[1+l]-e[1+a])-(e[a]-e[l])*(e[1+h]-e[1+a]))}return 0===u&&0===y?0:Math.abs((y-u)/u)},r.flatten=function(e){for(var n=e[0][0].length,t={vertices:[],holes:[],dimensions:n},r=0,x=0;x<e.length;x++){for(var i=0;i<e[x].length;i++)for(var u=0;u<n;u++)t.vertices.push(e[x][i][u]);0<x&&(r+=e[x-1].length,t.holes.push(r))}return t}},{}]},{},[1])(1)});
+</script>
+
+<script>
 (() => {
 "use strict";
 
 /* ============================================================================
-   BUILD / Mapster32 MAP Explorer — audited material and palette build.
+   BUILD / Mapster32 MAP Explorer — sprite-accurate, depth-stable audited material build.
 
    This is a static viewer (not EDuke32 in a browser). It parses the classic
    BUILD .MAP format (v7/v8/v9), reconstructs sector/wall/sprite geometry, and
@@ -265,6 +271,14 @@ const MAX_GEOMETRY_VERTICES = 1000000;
 const MAX_MATERIAL_GROUPS = 4096;
 const MAX_2D_TILE_CACHE = 512;
 const MAX_TRIANGULATION_POINT_TESTS = 2000000;
+const MAX_EARCUT_VERTICES_PER_COMPONENT = 65536;
+const CAMERA_NEAR_PLANE = 0.10;
+const MIN_CAMERA_FAR_PLANE = 128;
+const STATIC_SPRITE_DEPTH_BIAS = 1;
+const MASKED_WALL_SEPARATION = 0.0015;
+const WALL_SPRITE_SEPARATION = 0.0025;       // ~1.28 BUILD XY units: prevents coplanar wall flicker.
+const WALL_SPRITE_COPLANAR_EPSILON = 2.0;   // Only ornaments essentially touching a parallel wall are moved.
+const WALL_SPRITE_PARALLEL_DOT = 0.999;      // Do not alter sprites merely placed near a wall at another angle.
 
 /* ============================ 2. DOM REFS ============================ */
 const $ = id => document.getElementById(id);
@@ -785,11 +799,12 @@ function parsePalette(buffer){
 function parseLookup(buffer){
   const u=new Uint8Array(buffer);if(!u.length)throw new Error("LOOKUP.DAT is empty.");
   const count=u[0];if(count>64)throw new Error("Unreasonable LOOKUP.DAT table count: "+count);
-  let off=1;resources.lookups.clear();
+  let off=1;const parsed=new Map();
   for(let i=0;i<count;i++){
     if(off+257>u.length)throw new Error("LOOKUP.DAT is truncated at table "+i);
-    const pal=u[off++];resources.lookups.set(pal,u.slice(off,off+256));off+=256;
+    const pal=u[off++];parsed.set(pal,u.slice(off,off+256));off+=256;
   }
+  resources.lookups=parsed;
 }
 function mappedPaletteIndex(index,pal,shade){
   index&=255;const remap=resources.lookups.get(pal|0);if(remap)index=remap[index];
@@ -821,7 +836,7 @@ function parseArt(buffer, name){
   const start = r.i32(), end = r.i32();
   const count = end - start + 1;
   if(count <= 0 || count > 20000) throw new Error("Invalid tile range " + start + "-" + end);
-  const xs=[], ys=[], anm=[];
+  const xs=[], ys=[], anm=[], parsed=[];
   for(let i=0;i<count;i++) xs.push(r.i16());
   for(let i=0;i<count;i++) ys.push(r.i16());
   for(let i=0;i<count;i++) anm.push(r.i32());
@@ -829,8 +844,9 @@ function parseArt(buffer, name){
     const w=xs[i], h=ys[i], tile=start+i;
     if(w<0 || h<0 || w>4096 || h>4096 || w*h > MAX_TILE_PIXELS) throw new Error("Tile " + tile + " exceeds the safe browser texture limit.");
     const data = (w && h) ? r.bytes(w*h) : new Uint8Array(0);
-    resources.tiles.set(tile, {w,h,picanm:anm[i],data});
+    parsed.push([tile,{w,h,picanm:anm[i],data}]);
   }
+  for(const [tile,value] of parsed) resources.tiles.set(tile,value);
 }
 
 /* ============================ WEBGL SETUP ============================ */
@@ -860,10 +876,13 @@ function initGL(){
   if(!gl) throw new Error("WebGL is not available in this browser.");
   program = createProgram(VS, FS);
   gl.useProgram(program);
-  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
   gl.disable(gl.CULL_FACE);            // BUILD polygons face both ways
+  gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   whiteTex = solidTexture([255,255,255,255]);
+  const depthBits=gl.getParameter(gl.DEPTH_BITS)||0;
+  if(depthBits && depthBits<24) log(`WebGL provides a ${depthBits}-bit depth buffer; close surfaces may be less precise on this device.`,"warn");
 }
 function compile(type, src){
   const s = gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -977,16 +996,53 @@ function wallUVQuad(md,ownerSec,w,source,pic,zTop1,zTop2,zBot1,zBot2){
   return [[u0,v(zTop1,topAnchor1,floorAnchor1)],[u1,v(zTop2,topAnchor2,floorAnchor2)],
           [u1,v(zBot2,topAnchor2,floorAnchor2)],[u0,v(zBot1,topAnchor1,floorAnchor1)]];
 }
+function spriteRenderOffsets(sp){
+  const art=tileOffsets(sp.picnum);
+  let px=art.x+sp.xoffset,py=art.y+sp.yoffset;
+  // BUILD flips artwork around its anchor; the stored anchor offset flips with it.
+  if(sp.cstat&4)px=-px;
+  if(sp.cstat&8)py=-py;
+  return {x:px*Math.max(1,sp.xrepeat)/SPRITE_SCALE,y:py*Math.max(1,sp.yrepeat)/SPRITE_SCALE};
+}
+function nearestParallelWallPlacement(md,sp,normal,side){
+  const sec=md.sectors[sp.sectnum];
+  if(!sec||sec.wallptr<0||sec.wallnum<=0)return {x:0,z:0,adjusted:false};
+  let best=null;
+  for(let wi=sec.wallptr;wi<sec.wallptr+sec.wallnum;wi++){
+    const w=md.walls[wi],w2=w&&md.walls[w.point2];if(!w2)continue;
+    const dx=w2.x-w.x,dy=w2.y-w.y,l2=dx*dx+dy*dy;if(l2<1e-12)continue;
+    const len=Math.sqrt(l2),parallel=Math.abs(dx/len*side[0]+dy/len*side[1]);
+    if(parallel<WALL_SPRITE_PARALLEL_DOT)continue;
+    const t=clamp(((sp.x-w.x)*dx+(sp.y-w.y)*dy)/l2,0,1),qx=w.x+t*dx,qy=w.y+t*dy;
+    const vx=sp.x-qx,vy=sp.y-qy,dist=Math.hypot(vx,vy);
+    if(dist>WALL_SPRITE_COPLANAR_EPSILON||(best&&dist>=best.dist))continue;
+    best={dist,signed:vx*normal[0]+vy*normal[1]};
+  }
+  if(!best)return {x:0,z:0,adjusted:false};
+  let sign=1;
+  if(Math.abs(best.signed)>.125)sign=best.signed<0?-1:1;
+  else if(!(sp.cstat&64)){
+    // A two-sided ornament has no declared front. Prefer the side inside its owner sector.
+    const probe=4;
+    const plus=pointInSectorData(md,sp.x+normal[0]*probe,sp.y+normal[1]*probe,sp.sectnum);
+    const minus=pointInSectorData(md,sp.x-normal[0]*probe,sp.y-normal[1]*probe,sp.sectnum);
+    if(plus!==minus)sign=plus?1:-1;
+  }
+  return {x:normal[0]*WALL_SPRITE_SEPARATION*sign,z:normal[1]*WALL_SPRITE_SEPARATION*sign,adjusted:true};
+}
+
 async function buildWorld(md){
   deleteWorld();triangulationBudgetWarned=false;wallSegments=[];collisionBySector=Array.from({length:md.sectors.length},()=>[]);billboards=[];
-  const groups=new Map();
-  const grp=(pic,pal,shade,alpha=false,wrap=true,opacity=1)=>{
-    const k=`${pic|0}:${pal|0}:${shade|0}:${alpha?1:0}:${wrap?1:0}:${opacity}`;
+  const spriteStats={wall:0,floor:0,oneSided:0,coplanarAdjusted:0,slopedExtension:0};
+  const groups=new Map();let translucentSerial=0;
+  const grp=(pic,pal,shade,alpha=false,wrap=true,opacity=1,depthBias=0,sortId=0,oneSided=false)=>{
+    const translucent=opacity<0.999;
+    const k=`${pic|0}:${pal|0}:${shade|0}:${alpha?1:0}:${wrap?1:0}:${opacity}:${depthBias}:${oneSided?1:0}:${translucent?sortId:0}`;
     if(!groups.has(k)){
       if(groups.size>=MAX_MATERIAL_GROUPS)throw new Error(`Map requires more than ${MAX_MATERIAL_GROUPS} material groups; rendering stopped safely.`);
       const tex=getTexture(pic,pal,shade,alpha);
       const base=[1,1,1,opacity];
-      groups.set(k,{pic:pic|0,pal:pal|0,shade:shade|0,alpha:!!alpha,wrap:!!wrap,opacity,tex,pos:[],uv:[],col:[],base});
+      groups.set(k,{pic:pic|0,pal:pal|0,shade:shade|0,alpha:!!alpha,wrap:!!wrap,opacity,depthBias,oneSided:!!oneSided,tex,pos:[],uv:[],col:[],base});
     }
     return groups.get(k);
   };
@@ -995,9 +1051,8 @@ async function buildWorld(md){
   const quad=(g,v0,v1,v2,v3,uv)=>{tri(g,v0,v1,v2,uv[0],uv[1],uv[2]);tri(g,v0,v2,v3,uv[0],uv[2],uv[3]);};
   for(let si=0;si<md.sectors.length;si++){
     const sec=md.sectors[si];if((si&127)===0)await nextFrame();
-    for(const loop of sec.loops){
-      if(loop!==sec.outerLoop||loop.length<3)continue;
-      const pts=loop.map(wi=>({x:md.walls[wi].x,y:md.walls[wi].y})),tris=triangulate(pts);
+    for(const mesh of triangulateSectorSurfaces(md,sec,si)){
+      const pts=mesh.points,tris=mesh.triangles;
       for(const t of tris){
         const fv=t.map(i=>[pts[i].x/XY_SCALE,zToY(planeZAt(md,sec,false,pts[i].x,pts[i].y)),pts[i].y/XY_SCALE]);
         const fuv=t.map(i=>surfaceUV(md,sec,false,sec.floorpicnum,pts[i].x,pts[i].y));
@@ -1029,8 +1084,10 @@ async function buildWorld(md){
         if(w.cstat&(16|32)){
           const pic=w.overpicnum>=0?w.overpicnum:w.picnum,top1=Math.max(cc1,ncc1),top2=Math.max(cc2,ncc2),bot1=Math.min(ff1,nff1),bot2=Math.min(ff2,nff2);
           if(top1<bot1||top2<bot2){
-            const opacity=(w.cstat&128)?((w.cstat&512)?.33:.67):1,g=grp(pic,w.pal,w.shade,true,true,opacity);
-            quad(g,[x1,zToY(top1),z1],[x2,zToY(top2),z2],[x2,zToY(bot2),z2],[x1,zToY(bot1),z1],wallUVQuad(md,sec,w,w,pic,top1,top2,bot1,bot2));
+            const opacity=(w.cstat&128)?((w.cstat&512)?.33:.67):1;
+            const n=wallInteriorNormal(md,si,w,w2),ox=n[0]*MASKED_WALL_SEPARATION,oz=n[1]*MASKED_WALL_SEPARATION;
+            const g=grp(pic,w.pal,w.shade,true,true,opacity,0,opacity<.999?++translucentSerial:0);
+            quad(g,[x1+ox,zToY(top1),z1+oz],[x2+ox,zToY(top2),z2+oz],[x2+ox,zToY(bot2),z2+oz],[x1+ox,zToY(bot1),z1+oz],wallUVQuad(md,sec,w,w,pic,top1,top2,bot1,bot2));
           }
         }
       }
@@ -1044,28 +1101,49 @@ async function buildWorld(md){
     }
   }
   for(let spi=0;spi<md.sprites.length;spi++){
-    const sp=md.sprites[spi];if((spi&511)===0)await nextFrame();if((sp.cstat&32768)||sp.picnum<0||sp.sectnum<0||sp.sectnum>=md.sectors.length)continue;
+    const sp=md.sprites[spi];if((spi&511)===0)await nextFrame();if((sp.cstat&32768)||sp.picnum<0||sp.sectnum<0||sp.sectnum>=md.sectors.length||sp.xrepeat===0||sp.yrepeat===0)continue;
     const orient=sp.cstat&48;if(orient===0){billboards.push(sp);continue;}
     const tex=getTexture(sp.picnum,sp.pal,sp.shade,true),wm=Math.max(.05,(tex.w||32)*Math.max(1,sp.xrepeat)/SPRITE_SCALE),hm=Math.max(.05,(tex.h||32)*Math.max(1,sp.yrepeat)/SPRITE_SCALE);
-    const off=tileOffsets(sp.picnum),xoff=(off.x+sp.xoffset)*sp.xrepeat/SPRITE_SCALE,yoff=(off.y+sp.yoffset)*sp.yrepeat/SPRITE_SCALE;
-    const wx=sp.x/XY_SCALE,wz=sp.y/XY_SCALE,wy=zToY(sp.z),a=sp.ang*Math.PI/1024,dir=[Math.cos(a),Math.sin(a)],uL=(sp.cstat&4)?1:0,uR=(sp.cstat&4)?0:1,vT=(sp.cstat&8)?1:0,vB=(sp.cstat&8)?0:1;
-    const opacity=(sp.cstat&2)?.67:1,g=grp(sp.picnum,sp.pal,sp.shade,true,false,opacity);
+    const offset=spriteRenderOffsets(sp),xoff=offset.x,yoff=offset.y;
+    const wx=sp.x/XY_SCALE,wz=sp.y/XY_SCALE,wy=zToY(sp.z),a=sp.ang*Math.PI/1024,normal=[Math.cos(a),Math.sin(a)],side=[-Math.sin(a),Math.cos(a)],uL=(sp.cstat&4)?1:0,uR=(sp.cstat&4)?0:1,vT=(sp.cstat&8)?1:0,vB=(sp.cstat&8)?0:1;
+    const opacity=(sp.cstat&2)?((sp.cstat&512)?.33:.67):1,oneSided=!!(sp.cstat&64);
+    if(oneSided)spriteStats.oneSided++;
+    const g=grp(sp.picnum,sp.pal,sp.shade,true,false,opacity,STATIC_SPRITE_DEPTH_BIAS,opacity<.999?++translucentSerial:0,oneSided);
     if(orient===32||orient===48){
-      const ux=dir[0]*wm/2,uz=dir[1]*wm/2,vx=-dir[1]*hm/2,vz=dir[0]*hm/2,p=(sx,sz)=>[wx+sx,wy+.002,wz+sz];
-      tri(g,p(-ux-vx,-uz-vz),p(ux-vx,uz-vz),p(ux+vx,uz+vz),[uL,vB],[uR,vB],[uR,vT]);tri(g,p(-ux-vx,-uz-vz),p(ux+vx,uz+vz),p(-ux+vx,-uz+vz),[uL,vB],[uR,vT],[uL,vT]);
+      spriteStats.floor++;if(orient===48)spriteStats.slopedExtension++;
+      // BUILD uses the angle as the image Y axis; image X is perpendicular to it.
+      const cx=wx+side[0]*xoff+normal[0]*yoff,cz=wz+side[1]*xoff+normal[1]*yoff;
+      const sx=side[0]*wm/2,sz=side[1]*wm/2,yx=normal[0]*hm/2,yz=normal[1]*hm/2,p=(dx,dz)=>[cx+dx,wy,cz+dz];
+      const q0=p(-sx-yx,-sz-yz),q1=p(sx-yx,sz-yz),q2=p(sx+yx,sz+yz),q3=p(-sx+yx,-sz+yz);
+      // A one-sided floor sprite changes its visible face when Y-flipped, as in BUILD.
+      if(oneSided&&(sp.cstat&8)){
+        tri(g,q0,q2,q1,[uL,vB],[uR,vT],[uR,vB]);tri(g,q0,q3,q2,[uL,vB],[uL,vT],[uR,vT]);
+      }else{
+        tri(g,q0,q1,q2,[uL,vB],[uR,vB],[uR,vT]);tri(g,q0,q2,q3,[uL,vB],[uR,vT],[uL,vT]);
+      }
     }else{
-      const px=-dir[1],pz=dir[0],cx=wx+px*xoff,cz=wz+pz*xoff,bottom=(sp.cstat&128)?wy-hm/2-yoff:wy-yoff,top=bottom+hm;
-      quad(g,[cx-px*wm/2,top,cz-pz*wm/2],[cx+px*wm/2,top,cz+pz*wm/2],[cx+px*wm/2,bottom,cz+pz*wm/2],[cx-px*wm/2,bottom,cz-pz*wm/2],[[uL,vT],[uR,vT],[uR,vB],[uL,vB]]);
+      spriteStats.wall++;
+      const separation=nearestParallelWallPlacement(md,sp,normal,side);if(separation.adjusted)spriteStats.coplanarAdjusted++;
+      const cx=wx+side[0]*xoff+separation.x,cz=wz+side[1]*xoff+separation.z,bottom=(sp.cstat&128)?wy-hm/2-yoff:wy-yoff,top=bottom+hm;
+      quad(g,[cx-side[0]*wm/2,top,cz-side[1]*wm/2],[cx+side[0]*wm/2,top,cz+side[1]*wm/2],[cx+side[0]*wm/2,bottom,cz+side[1]*wm/2],[cx-side[0]*wm/2,bottom,cz-side[1]*wm/2],[[uL,vT],[uR,vT],[uR,vB],[uL,vB]]);
     }
   }
   worldGroups=[];let gi=0;for(const g of groups.values()){const up=uploadGroup(g);if(up.n>0)worldGroups.push(up);if((++gi&31)===0)await nextFrame();}
+  updateCameraFarPlane(md);
   allocSpriteBatch(billboards.length);
-  log(`Geometry built: ${worldGroups.length} material groups, ${wallSegments.length} collision segments, ${billboards.length} billboards, ${md.sprites.length-billboards.length} flat sprites.`,"ok");
+  log(`Geometry built: ${worldGroups.length} material groups, ${wallSegments.length} collision segments, ${billboards.length} billboards, ${spriteStats.wall+spriteStats.floor} static sprites.`,"ok");
+  if(spriteStats.wall||spriteStats.floor)log(`Static sprite fidelity: ${spriteStats.wall} wall-aligned, ${spriteStats.floor} floor-aligned, ${spriteStats.oneSided} one-sided; ${spriteStats.coplanarAdjusted} coplanar wall ornament(s) separated safely.`,"ok");
+  if(spriteStats.slopedExtension)log(`${spriteStats.slopedExtension} sprite(s) use the cstat 48 sloped-sprite extension; their base rotation is preserved, but game-specific slope metadata may require EDuke32.`,"warn");
 }
-function uploadGroup(g){return {pic:g.pic,pal:g.pal,shade:g.shade,alpha:g.alpha,wrap:g.wrap,opacity:g.opacity,n:g.pos.length/3,pos:makeBuffer(new Float32Array(g.pos)),uv:makeBuffer(new Float32Array(g.uv)),col:makeBuffer(new Float32Array(g.col)),tex:g.tex};}
+function uploadGroup(g){
+  let cx=0,cy=0,cz=0,count=g.pos.length/3;
+  for(let i=0;i<g.pos.length;i+=3){cx+=g.pos[i];cy+=g.pos[i+1];cz+=g.pos[i+2];}
+  if(count){cx/=count;cy/=count;cz/=count;}
+  return {pic:g.pic,pal:g.pal,shade:g.shade,alpha:g.alpha,wrap:g.wrap,opacity:g.opacity,depthBias:g.depthBias||0,oneSided:!!g.oneSided,center:[cx,cy,cz],n:count,pos:makeBuffer(new Float32Array(g.pos)),uv:makeBuffer(new Float32Array(g.uv)),col:makeBuffer(new Float32Array(g.col)),tex:g.tex};
+}
 function deleteWorld(){
   if(gl) for(const g of worldGroups){ gl.deleteBuffer(g.pos); gl.deleteBuffer(g.uv); gl.deleteBuffer(g.col); }
-  worldGroups=[]; wallSegments=[]; collisionBySector=[]; billboards=[];
+  worldGroups=[]; wallSegments=[]; collisionBySector=[]; billboards=[]; cameraFarPlane=MIN_CAMERA_FAR_PLANE;
 }
 // Preallocate reusable buffers/arrays for billboards (no per-frame allocation).
 function allocSpriteBatch(count){
@@ -1077,6 +1155,107 @@ function allocSpriteBatch(count){
     spriteBatch.fuv  = new Float32Array(verts*2);
     spriteBatch.fcol = new Float32Array(verts*4);
   }
+}
+
+/* ---- Sector-loop classification and robust triangulation with holes. ---- */
+function inLoopData(md,x,y,loop){
+  let inside=false;
+  for(let a=0,b=loop.length-1;a<loop.length;b=a++){
+    const wa=md.walls[loop[a]],wb=md.walls[loop[b]];
+    if(((wa.y>y)!==(wb.y>y)) && (x<(wb.x-wa.x)*(y-wa.y)/(wb.y-wa.y+1e-12)+wa.x)) inside=!inside;
+  }
+  return inside;
+}
+function pointInSectorData(md,x,y,si){
+  const sec=md.sectors[si];if(!sec||!sec.loops||!sec.loops.length)return false;
+  let parity=false;
+  for(const loop of sec.loops) if(inLoopData(md,x,y,loop)) parity=!parity;
+  return parity;
+}
+function cleanRingPoints(md,loop){
+  const out=[];
+  for(const wi of loop){
+    const w=md.walls[wi];if(!w||!finite(w.x,w.y))continue;
+    const prev=out[out.length-1];if(!prev||prev.x!==w.x||prev.y!==w.y)out.push({x:w.x,y:w.y});
+  }
+  if(out.length>1&&out[0].x===out[out.length-1].x&&out[0].y===out[out.length-1].y)out.pop();
+  return out;
+}
+function pointInPointRing(x,y,ring){
+  let inside=false;
+  for(let a=0,b=ring.length-1;a<ring.length;b=a++){
+    const p=ring[a],q=ring[b];
+    if(((p.y>y)!==(q.y>y)) && (x<(q.x-p.x)*(y-p.y)/(q.y-p.y+1e-12)+p.x))inside=!inside;
+  }
+  return inside;
+}
+function ringInteriorSample(ring){
+  const area=polyArea(ring);
+  for(let i=0;i<ring.length;i++){
+    const a=ring[i],b=ring[(i+1)%ring.length],dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy);
+    if(len<1e-9)continue;
+    const nx=area>=0?-dy/len:dy/len,ny=area>=0?dx/len:-dx/len;
+    return {x:(a.x+b.x)/2+nx*.25,y:(a.y+b.y)/2+ny*.25};
+  }
+  return ring[0]||{x:0,y:0};
+}
+function classifySectorRings(md,sec){
+  const rings=sec.loops.map((loop,index)=>({loop,index,points:cleanRingPoints(md,loop)})).filter(r=>r.points.length>=3);
+  for(const r of rings){r.area=polyArea(r.points);r.absArea=Math.abs(r.area);r.sample=ringInteriorSample(r.points);r.parent=-1;r.depth=0;}
+  for(let i=0;i<rings.length;i++){
+    let parent=-1,best=Infinity;
+    for(let j=0;j<rings.length;j++){
+      if(i===j||rings[j].absArea<=rings[i].absArea)continue;
+      if(rings[j].absArea<best&&pointInPointRing(rings[i].sample.x,rings[i].sample.y,rings[j].points)){parent=j;best=rings[j].absArea;}
+    }
+    rings[i].parent=parent;
+  }
+  const depthOf=i=>{let d=0,p=rings[i].parent,guard=0;while(p>=0&&guard++<rings.length){d++;p=rings[p].parent;}return d;};
+  for(let i=0;i<rings.length;i++)rings[i].depth=depthOf(i);
+  const components=[];
+  for(let i=0;i<rings.length;i++)if((rings[i].depth&1)===0){
+    const holes=[];for(let j=0;j<rings.length;j++)if(rings[j].parent===i&&(rings[j].depth&1)===1)holes.push(rings[j]);
+    components.push({outer:rings[i],holes});
+  }
+  return components;
+}
+let holeTriangulationWarningCount=0;
+function triangulateSectorSurfaces(md,sec,sectorIndex){
+  const components=classifySectorRings(md,sec),meshes=[];
+  for(const component of components){
+    const points=[],flat=[],holes=[];
+    const append=ring=>{for(const p of ring.points){points.push(p);flat.push(p.x,p.y);}};
+    append(component.outer);
+    for(const hole of component.holes){holes.push(points.length);append(hole);}
+    if(points.length>MAX_EARCUT_VERTICES_PER_COMPONENT)throw new Error(`Sector ${sectorIndex} has ${points.length.toLocaleString("en-US")} vertices in one surface component; safety limit is ${MAX_EARCUT_VERTICES_PER_COMPONENT.toLocaleString("en-US")}.`);
+    let indices=[];
+    try{indices=window.earcut(flat,holes,2);}catch(e){throw new Error(`Sector ${sectorIndex} triangulation failed safely: ${e.message}`);}
+    const deviation=window.earcut.deviation?window.earcut.deviation(flat,holes,2,indices):0;
+    if(!indices.length||!Number.isFinite(deviation)||deviation>1e-4){
+      if(component.holes.length)throw new Error(`Sector ${sectorIndex} contains inner loops that could not be triangulated reliably (deviation ${Number.isFinite(deviation)?deviation.toExponential(2):"invalid"}).`);
+      const fallback=triangulate(component.outer.points);indices=[];for(const t of fallback)indices.push(t[0],t[1],t[2]);
+      if(holeTriangulationWarningCount++<3)log(`Sector ${sectorIndex} used the bounded simple-polygon triangulation fallback.`,"warn");
+    }
+    const triangles=[];for(let i=0;i+2<indices.length;i+=3)triangles.push([indices[i],indices[i+1],indices[i+2]]);
+    meshes.push({points,triangles,holeCount:component.holes.length,deviation});
+  }
+  return meshes;
+}
+function wallInteriorNormal(md,si,w,w2){
+  const dx=w2.x-w.x,dy=w2.y-w.y,len=Math.hypot(dx,dy);if(len<1e-9)return[0,0];
+  const nx=-dy/len,ny=dx/len,mx=(w.x+w2.x)/2,my=(w.y+w2.y)/2,test=8;
+  const plus=pointInSectorData(md,mx+nx*test,my+ny*test,si),minus=pointInSectorData(md,mx-nx*test,my-ny*test,si);
+  if(plus&&!minus)return[nx,ny];if(minus&&!plus)return[-nx,-ny];
+  const sec=md.sectors[si],cx=sec&&sec.centroid?sec.centroid.x-mx:0,cy=sec&&sec.centroid?sec.centroid.y-my:0;
+  return cx*nx+cy*ny>=0?[nx,ny]:[-nx,-ny];
+}
+let cameraFarPlane=MIN_CAMERA_FAR_PLANE;
+function updateCameraFarPlane(md){
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity,minz=Infinity,maxz=-Infinity;
+  for(const w of md.walls){minx=Math.min(minx,w.x);miny=Math.min(miny,w.y);maxx=Math.max(maxx,w.x);maxy=Math.max(maxy,w.y);}
+  for(const sec of md.sectors){minz=Math.min(minz,sec.ceilingz,sec.floorz);maxz=Math.max(maxz,sec.ceilingz,sec.floorz);}
+  const horizontal=Math.hypot(maxx-minx,maxy-miny)/XY_SCALE,vertical=(maxz-minz)/Z_SCALE;
+  cameraFarPlane=clamp(Math.hypot(horizontal,vertical)*1.35+64,MIN_CAMERA_FAR_PLANE,MAX_DRAW_DIST);
 }
 
 /* ---- Ear-clipping triangulation with a fan fallback for bad polygons ---- */
@@ -1258,21 +1437,11 @@ function findSector(x,y,prefer=-1){
   return -1;
 }
 function pointInSector(x,y,si){
-  const s=mapData.sectors[si];
-  if(!s||!s.outerLoop||s.outerLoop.length<3) return false;
-  const b=s.bbox; if(b && (x<b.minx||x>b.maxx||y<b.miny||y>b.maxy)) return false;
-  if(!inLoop(x,y,s.outerLoop)) return false;
-  for(const loop of s.loops){ if(loop===s.outerLoop) continue; if(inLoop(x,y,loop)) return false; }
-  return true;
+  const sec=mapData.sectors[si];if(!sec||!sec.loops||!sec.loops.length)return false;
+  const b=sec.bbox;if(b&&(x<b.minx||x>b.maxx||y<b.miny||y>b.maxy))return false;
+  return pointInSectorData(mapData,x,y,si);
 }
-function inLoop(x,y,loop){
-  let inside=false;
-  for(let a=0,b=loop.length-1; a<loop.length; b=a++){
-    const wa=mapData.walls[loop[a]], wb=mapData.walls[loop[b]];
-    if(((wa.y>y)!==(wb.y>y)) && (x < (wb.x-wa.x)*(y-wa.y)/(wb.y-wa.y+1e-9)+wa.x)) inside=!inside;
-  }
-  return inside;
-}
+function inLoop(x,y,loop){return inLoopData(mapData,x,y,loop);}
 function blocksAt(x,y,sector){
   const r = PLAYER_RADIUS*XY_SCALE;
   const cand = new Set([sector,cam.sector]);
@@ -1595,6 +1764,10 @@ function drawGroup(g){
   gl.bindTexture(gl.TEXTURE_2D, (tex&&tex.tex)?tex.tex:whiteTex.tex);
   gl.uniform1f(program.uUseTex,optTextures.checked?1:0);
   gl.uniform1f(program.uWrap,g.wrap?1:0);
+  if(g.depthBias){gl.enable(gl.POLYGON_OFFSET_FILL);gl.polygonOffset(-g.depthBias,-g.depthBias);}
+  else gl.disable(gl.POLYGON_OFFSET_FILL);
+  if(g.oneSided){gl.enable(gl.CULL_FACE);gl.frontFace(gl.CCW);gl.cullFace(gl.BACK);}
+  else gl.disable(gl.CULL_FACE);
   gl.bindBuffer(gl.ARRAY_BUFFER,g.pos); gl.enableVertexAttribArray(program.aPos);   gl.vertexAttribPointer(program.aPos,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,g.uv);  gl.enableVertexAttribArray(program.aUv);    gl.vertexAttribPointer(program.aUv,2,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,g.col); gl.enableVertexAttribArray(program.aColor); gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
@@ -1602,61 +1775,40 @@ function drawGroup(g){
 }
 
 // Billboard the face sprites toward the camera; fill preallocated buffers only.
-function drawBillboards(){
+function drawBillboards(translucentPass){
+  gl.disable(gl.CULL_FACE);
   const right=[-Math.sin(cam.yaw),0,Math.cos(cam.yaw)];
-  const runs=[]; let vi=0;                                 // group consecutive same-texture verts
-  const pos=spriteBatch.fpos, uv=spriteBatch.fuv, col=spriteBatch.fcol;
-
-  const items=[];
+  const runs=[];let vi=0;
+  const pos=spriteBatch.fpos,uv=spriteBatch.fuv,col=spriteBatch.fcol,items=[];
   for(const sp of billboards){
-    if(!optMarkers.checked && categoryOf(sp.picnum)==="marker") continue;
-    const sx=sp.x/XY_SCALE, sy=zToY(sp.z), sz=sp.y/XY_SCALE;
-    const dx=sx-cam.x, dz=sz-cam.z, d2=dx*dx+dz*dz;
-    if(d2 > SPRITE_CULL2) continue;
-    const tex=getDisplayTexture(sp.picnum,sp.pal,sp.shade,true);
-    const w=Math.max(0.05,(tex.w||32)*Math.max(1,sp.xrepeat)/SPRITE_SCALE);
-    const h=Math.max(0.05,(tex.h||32)*Math.max(1,sp.yrepeat)/SPRITE_SCALE);
+    if(sp.xrepeat===0||sp.yrepeat===0)continue;
+    if(!optMarkers.checked&&categoryOf(sp.picnum)==="marker")continue;
+    const translucent=!!(sp.cstat&2);if(translucent!==translucentPass)continue;
+    const sx=sp.x/XY_SCALE,sy=zToY(sp.z),sz=sp.y/XY_SCALE,dx=sx-cam.x,dz=sz-cam.z,d2=dx*dx+dz*dz;
+    if(d2>SPRITE_CULL2)continue;
+    const tex=getDisplayTexture(sp.picnum,sp.pal,sp.shade,true),w=Math.max(.05,(tex.w||32)*Math.max(1,sp.xrepeat)/SPRITE_SCALE),h=Math.max(.05,(tex.h||32)*Math.max(1,sp.yrepeat)/SPRITE_SCALE);
     items.push({sp,sx,sy,sz,w,h,d2,tex});
   }
-  items.sort((a,b)=>b.d2-a.d2);                            // back-to-front for alpha
+  items.sort(translucentPass?(a,b)=>b.d2-a.d2:(a,b)=>a.d2-b.d2);
   allocSpriteBatch(items.length);
-
-  let curTex=null, start=0, count=0;
-  const flushRun=()=>{ if(count) runs.push({tex:curTex,start,count}); };
+  let curTex=null,start=0,count=0;
+  const flushRun=()=>{if(count)runs.push({tex:curTex,start,count});};
   for(const o of items){
-    if(o.tex!==curTex){ flushRun(); curTex=o.tex; start=vi; count=0; }
-    const off=tileOffsets(o.sp.picnum),xo=(off.x+o.sp.xoffset)*o.sp.xrepeat/SPRITE_SCALE,yo=(off.y+o.sp.yoffset)*o.sp.yrepeat/SPRITE_SCALE;
-    const half=o.w/2,c=[1,1,1,(o.sp.cstat&2)?.67:1];
+    if(o.tex!==curTex){flushRun();curTex=o.tex;start=vi;count=0;}
+    const adjusted=spriteRenderOffsets(o.sp),xo=adjusted.x,yo=adjusted.y;
+    const half=o.w/2,opacity=translucentPass?((o.sp.cstat&512)?.33:.67):1,c=[1,1,1,opacity];
     const cx=o.sx+right[0]*xo,cz=o.sz+right[2]*xo,bottom=(o.sp.cstat&128)?o.sy-o.h/2-yo:o.sy-yo,top=bottom+o.h;
-    const v=[[cx-right[0]*half,bottom,cz-right[2]*half],[cx+right[0]*half,bottom,cz+right[2]*half],
-             [cx+right[0]*half,top,cz+right[2]*half],[cx-right[0]*half,top,cz-right[2]*half]];
-    const verts=[v[0],v[1],v[2],v[0],v[2],v[3]];
-    const uL=(o.sp.cstat&4)?1:0, uR=(o.sp.cstat&4)?0:1;
-    const vT=(o.sp.cstat&8)?1:0, vB=(o.sp.cstat&8)?0:1;
-    const uvs=[uL,vB,uR,vB,uR,vT,uL,vB,uR,vT,uL,vT];
-    for(let k=0;k<6;k++){ const p=verts[k];
-      pos[vi*3]=p[0]; pos[vi*3+1]=p[1]; pos[vi*3+2]=p[2];
-      uv[vi*2]=uvs[k*2]; uv[vi*2+1]=uvs[k*2+1];
-      col[vi*4]=c[0]; col[vi*4+1]=c[1]; col[vi*4+2]=c[2]; col[vi*4+3]=c[3];
-      vi++; count++;
-    }
+    const v=[[cx-right[0]*half,bottom,cz-right[2]*half],[cx+right[0]*half,bottom,cz+right[2]*half],[cx+right[0]*half,top,cz+right[2]*half],[cx-right[0]*half,top,cz-right[2]*half]],verts=[v[0],v[1],v[2],v[0],v[2],v[3]];
+    const uL=(o.sp.cstat&4)?1:0,uR=(o.sp.cstat&4)?0:1,vT=(o.sp.cstat&8)?1:0,vB=(o.sp.cstat&8)?0:1,uvs=[uL,vB,uR,vB,uR,vT,uL,vB,uR,vT,uL,vT];
+    for(let k=0;k<6;k++){const p=verts[k];pos[vi*3]=p[0];pos[vi*3+1]=p[1];pos[vi*3+2]=p[2];uv[vi*2]=uvs[k*2];uv[vi*2+1]=uvs[k*2+1];col[vi*4]=c[0];col[vi*4+1]=c[1];col[vi*4+2]=c[2];col[vi*4+3]=c[3];vi++;count++;}
   }
-  flushRun();
-  if(!vi) return;
-
-  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.pos); gl.bufferData(gl.ARRAY_BUFFER,pos.subarray(0,vi*3),gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(program.aPos); gl.vertexAttribPointer(program.aPos,3,gl.FLOAT,false,0,0);
-  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.uv);  gl.bufferData(gl.ARRAY_BUFFER,uv.subarray(0,vi*2),gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(program.aUv); gl.vertexAttribPointer(program.aUv,2,gl.FLOAT,false,0,0);
-  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.col); gl.bufferData(gl.ARRAY_BUFFER,col.subarray(0,vi*4),gl.DYNAMIC_DRAW);
-  gl.enableVertexAttribArray(program.aColor); gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
-
-  gl.uniform1f(program.uUseTex,optTextures.checked?1:0);gl.uniform1f(program.uWrap,0);
-  gl.activeTexture(gl.TEXTURE0);
-  for(const run of runs){
-    gl.bindTexture(gl.TEXTURE_2D, run.tex.tex||whiteTex.tex);
-    gl.drawArrays(gl.TRIANGLES, run.start, run.count);
-  }
+  flushRun();if(!vi)return;
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.pos);gl.bufferData(gl.ARRAY_BUFFER,pos.subarray(0,vi*3),gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(program.aPos);gl.vertexAttribPointer(program.aPos,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.uv);gl.bufferData(gl.ARRAY_BUFFER,uv.subarray(0,vi*2),gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(program.aUv);gl.vertexAttribPointer(program.aUv,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.col);gl.bufferData(gl.ARRAY_BUFFER,col.subarray(0,vi*4),gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(program.aColor);gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
+  gl.uniform1f(program.uUseTex,optTextures.checked?1:0);gl.uniform1f(program.uWrap,0);gl.activeTexture(gl.TEXTURE0);
+  for(const run of runs){gl.bindTexture(gl.TEXTURE_2D,run.tex.tex||whiteTex.tex);gl.drawArrays(gl.TRIANGLES,run.start,run.count);}
 }
 
 let lastTime=performance.now(), fpsTime=performance.now(), fpsFrames=0, fps=0;
@@ -1680,7 +1832,7 @@ function render(){
   if(!mapData){ hudEl.textContent = "No map loaded.\nFPS: "+fps; return; }
 
   const aspect = Math.max(0.1, canvas.width/Math.max(1,canvas.height));
-  const proj = perspective(Math.PI/3, aspect, 0.04, MAX_DRAW_DIST);
+  const proj = perspective(Math.PI/3, aspect, CAMERA_NEAR_PLANE, cameraFarPlane);
   const cp=Math.cos(cam.pitch);
   const target=[cam.x+cp*Math.cos(cam.yaw), cam.y+Math.sin(cam.pitch), cam.z+cp*Math.sin(cam.yaw)];
   const mvp = mul(proj, lookAt([cam.x,cam.y,cam.z], target, [0,1,0]));
@@ -1689,12 +1841,18 @@ function render(){
   gl.uniformMatrix4fv(program.uMVP,false,mvp);
   gl.uniform1i(program.uTex,0);
 
-  gl.disable(gl.BLEND);
-  for(const g of worldGroups) if(!g.alpha) drawGroup(g);
-  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  for(const g of worldGroups) if(g.alpha) drawGroup(g);
-  if(optSprites.checked) drawBillboards();
-  gl.disable(gl.BLEND);
+  gl.depthMask(true);gl.disable(gl.BLEND);
+  for(const g of worldGroups)if(g.opacity>=.999)drawGroup(g);
+  if(optSprites.checked)drawBillboards(false);
+
+  const translucent=worldGroups.filter(g=>g.opacity<.999).sort((a,b)=>{
+    const ad=(a.center[0]-cam.x)**2+(a.center[1]-cam.y)**2+(a.center[2]-cam.z)**2;
+    const bd=(b.center[0]-cam.x)**2+(b.center[1]-cam.y)**2+(b.center[2]-cam.z)**2;return bd-ad;
+  });
+  gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+  for(const g of translucent)drawGroup(g);
+  if(optSprites.checked)drawBillboards(true);
+  gl.depthMask(true);gl.disable(gl.BLEND);gl.disable(gl.POLYGON_OFFSET_FILL);gl.disable(gl.CULL_FACE);
 
   const mode = cam.noclip ? "noclip" : cam.fly ? "fly" : "walk";
   const locked = document.pointerLockElement===canvas;
@@ -1747,6 +1905,8 @@ async function buildAnalysisBlob(){
 function downloadBlob(name,blob){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.rel="noopener";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);}
 function usedTileSet(md){const x=new Set();for(const s of md.sectors){x.add(s.floorpicnum);x.add(s.ceilingpicnum);}for(const w of md.walls){x.add(w.picnum);if((w.cstat&(16|32))&&w.overpicnum>=0)x.add(w.overpicnum);}for(const sp of md.sprites)x.add(sp.picnum);return x;}
 function reportRenderFidelity(md){
+  const multiLoop=md.sectors.filter(sec=>sec.loops&&sec.loops.length>1).length;
+  if(multiLoop)log(`${multiLoop} sector(s) contain inner or nested loops; floors and ceilings are triangulated with real holes.`,"ok");
   const used=usedTileSet(md),missing=[...used].filter(n=>n>=0&&!resources.tiles.has(n)),pals=new Set();
   for(const s of md.sectors){pals.add(s.floorpal);pals.add(s.ceilingpal);}for(const w of md.walls)pals.add(w.pal);for(const sp of md.sprites)pals.add(sp.pal);
   const nonzero=[...pals].filter(Boolean),parallax=md.sectors.filter(s=>(s.floorstat|s.ceilingstat)&1).length;
@@ -1797,6 +1957,11 @@ $("loadBtn").addEventListener("click", async () => {
     log("Done. Use V or the view button for the full textured 2D mode.", "ok");
     canvas.focus();
   } catch(e){
+    deleteWorld();mapData=null;mapStats=null;miniT=null;miniWrap.classList.add("hidden");
+    $("tab-info").innerHTML='<div class="empty">Map load failed safely.</div>';
+    $("tab-objects").innerHTML='<div class="empty">No objects available.</div>';
+    $("tab-nav").innerHTML='<div class="empty">No sectors available.</div>';
+    $("tab-walls").innerHTML='<div class="empty">No walls available.</div>';
     log("ERROR: " + e.message, "bad");
     console.warn("Map load failed:",e);
   } finally {
