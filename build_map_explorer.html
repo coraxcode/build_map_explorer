@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BUILD / Mapster32 MAP Explorer</title>
+<style>
+/* ---------- Design tokens: a dark "editor console" grounded in BUILD 2D mode ---------- */
+:root{
+  --void:#0a0c11;          /* deep background            */
+  --panel:#12151d;         /* panel surface              */
+  --panel2:#1a1f2b;        /* raised control surface     */
+  --edge:#26303f;          /* hairline borders           */
+  --ink:#e7edf6;           /* primary text               */
+  --muted:#8593ab;         /* secondary text             */
+  --cyan:#3fd9c8;          /* BUILD blueprint accent     */
+  --amber:#f0b429;         /* warnings / highlights      */
+  --red:#ff6f6f;           /* errors / one-sided walls   */
+  --green:#7ee081;         /* success                    */
+  --blue:#7db2ff;          /* info                       */
+  --mono:ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--void);color:var(--ink);font-family:var(--sans)}
+#gl{position:fixed;inset:0;width:100vw;height:100vh;display:block;background:#05070b;outline:none;cursor:crosshair}
+
+/* ---------- Left panel with tabs ---------- */
+#panel{position:fixed;left:14px;top:14px;z-index:20;width:min(430px,calc(100vw - 28px));
+  background:rgba(18,21,29,.97);border:1px solid var(--edge);border-radius:14px;
+  box-shadow:0 18px 50px rgba(0,0,0,.55);overflow:hidden;backdrop-filter:blur(4px)}
+#panelHead{padding:12px 15px;background:linear-gradient(135deg,#1b2230,#101420);border-bottom:1px solid var(--edge)}
+#panelHead h1{font-size:16px;margin:0;letter-spacing:.3px}
+#panelHead h1 span{color:var(--cyan)}
+#panelHead p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.4}
+#tabs{display:flex;border-bottom:1px solid var(--edge);background:#0e121b}
+.tab{flex:1;padding:9px 4px;text-align:center;font-size:12px;font-weight:600;color:var(--muted);
+  cursor:pointer;border:none;background:none;border-bottom:2px solid transparent}
+.tab:hover{color:var(--ink)}
+.tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tabBody{display:none;padding:13px 15px;max-height:70vh;overflow:auto}
+.tabBody.active{display:block}
+
+/* ---------- Controls ---------- */
+.field{display:grid;gap:6px;margin:11px 0}
+label.h{font-size:12px;color:#cdd8ec;font-weight:700}
+input[type=file]{width:100%;padding:8px;background:#0e131f;border:1px solid var(--edge);border-radius:9px;color:var(--ink);font-size:12px}
+.hint{font-size:11px;color:var(--muted);line-height:1.4;margin:0}
+button{cursor:pointer;border:1px solid var(--edge);background:var(--panel2);color:var(--ink);border-radius:9px;
+  padding:9px 11px;font-weight:600;font-size:12px;transition:border-color .15s,background .15s}
+button:hover{border-color:var(--cyan)}
+button.primary{background:linear-gradient(135deg,#173a37,#0f2a28);border-color:#2c6b64;color:#d9fbf6}
+button.primary:hover{border-color:var(--cyan)}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:11px 0}
+.opt{display:flex;gap:7px;align-items:center;background:#0e131f;border:1px solid var(--edge);
+  border-radius:9px;padding:8px;font-size:12px;color:#d4def0;cursor:pointer}
+select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edge);border-radius:9px;padding:8px;font-size:12px}
+#log{font-family:var(--mono);white-space:pre-wrap;background:#080b12;border:1px solid var(--edge);
+  border-radius:9px;color:#c6d1e8;padding:10px;font-size:11px;line-height:1.45;margin-top:11px;max-height:150px;overflow:auto}
+.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}.info{color:var(--blue)}
+
+/* ---------- Data readouts (Info / Objects / Navigate tabs) ---------- */
+.stat{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #1b2331;font-size:12px}
+.stat b{color:var(--muted);font-weight:600}
+.stat span{font-family:var(--mono);color:var(--ink)}
+.section{margin:14px 0 6px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--cyan);font-weight:700}
+.bars{display:grid;gap:5px;margin-top:6px}
+.barRow{display:grid;grid-template-columns:110px 1fr 42px;align-items:center;gap:8px;font-size:11px}
+.barRow .name{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.barRow .track{height:9px;background:#141a26;border-radius:5px;overflow:hidden}
+.barRow .fill{height:100%;background:linear-gradient(90deg,#2c6b64,var(--cyan))}
+.barRow .num{font-family:var(--mono);text-align:right;color:var(--ink)}
+#search{width:100%;padding:8px;background:#0e131f;border:1px solid var(--edge);border-radius:9px;color:var(--ink);font-size:12px;margin-bottom:8px}
+.list{display:grid;gap:5px}
+.item{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:#0e131f;border:1px solid var(--edge);
+  border-radius:8px;padding:7px 9px;font-size:12px}
+.item .meta{min-width:0}
+.item .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .sub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px}
+.item .go{padding:5px 9px;font-size:11px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.empty{color:var(--muted);font-size:12px;padding:12px 0;text-align:center}
+
+/* ---------- Minimap (signature element: BUILD 2D blueprint) ---------- */
+#miniWrap{position:fixed;right:14px;top:14px;z-index:14;background:rgba(8,11,17,.92);
+  border:1px solid var(--edge);border-radius:12px;padding:8px;box-shadow:0 12px 34px rgba(0,0,0,.5)}
+#miniHead{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);margin:0 2px 6px}
+#miniHead b{color:var(--cyan);letter-spacing:.5px}
+#mini{display:block;border-radius:7px;background:#04060a;cursor:crosshair}
+
+/* ---------- HUD + help ---------- */
+#hud{position:fixed;right:14px;bottom:14px;z-index:12;background:rgba(8,11,17,.86);border:1px solid var(--edge);
+  border-radius:11px;padding:9px 12px;color:#dbe6f7;font:11.5px/1.5 var(--mono);min-width:210px}
+#hud .k{color:var(--cyan)}
+#help{position:fixed;left:14px;bottom:14px;z-index:12;max-width:640px;background:rgba(8,11,17,.86);
+  border:1px solid var(--edge);border-radius:11px;padding:9px 12px;color:#cdd8ec;font-size:11.5px;line-height:1.6}
+#help .key{display:inline-block;background:#1a2130;border:1px solid var(--edge);border-radius:5px;
+  padding:1px 6px;color:var(--cyan);font-family:var(--mono);font-size:11px;font-weight:600}
+#cross{position:fixed;left:50%;top:50%;z-index:8;width:16px;height:16px;margin:-8px 0 0 -8px;pointer-events:none;opacity:.75}
+#cross:before,#cross:after{content:"";position:absolute;background:var(--cyan)}
+#cross:before{left:7px;top:0;width:2px;height:16px}
+#cross:after{left:0;top:7px;width:16px;height:2px}
+.hidden{display:none!important}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#26303f;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<canvas id="gl" tabindex="0"></canvas>
+<div id="cross"></div>
+
+<!-- ===================== Left control / inspector panel ===================== -->
+<div id="panel">
+  <div id="panelHead">
+    <h1><span>BUILD</span> / Mapster32 MAP Explorer</h1>
+    <p>Lightweight WebGL viewer for Duke Nukem 3D <b>.MAP</b> files. Optionally load <b>DUKE3D.GRP</b> or <b>TILES###.ART + PALETTE.DAT</b> for real textures.</p>
+  </div>
+
+  <div id="tabs">
+    <button class="tab active" data-tab="load">Load</button>
+    <button class="tab" data-tab="info">Map info</button>
+    <button class="tab" data-tab="objects">Objects</button>
+    <button class="tab" data-tab="nav">Navigate</button>
+  </div>
+
+  <!-- ---- Load tab ---- -->
+  <div class="tabBody active" id="tab-load">
+    <div class="field">
+      <label class="h">1) Map file (.MAP)</label>
+      <input id="mapFile" type="file" accept=".map,.MAP">
+    </div>
+    <div class="field">
+      <label class="h">2) Optional resources</label>
+      <input id="resFiles" type="file" multiple accept=".grp,.GRP,.art,.ART,.dat,.DAT">
+      <p class="hint">Without GRP/ART/PALETTE the map opens with fast procedural colours.</p>
+    </div>
+    <div class="opts">
+      <label class="opt"><input id="optTextures" type="checkbox" checked> Textures</label>
+      <label class="opt"><input id="optSprites" type="checkbox" checked> Sprites</label>
+      <label class="opt"><input id="optCollision" type="checkbox" checked> Collision</label>
+      <label class="opt"><input id="optMarkers" type="checkbox"> Editor markers</label>
+    </div>
+    <div class="field">
+      <label class="h">Internal resolution</label>
+      <select id="resolution">
+        <option value="1" selected>Fast — 1x</option>
+        <option value="1.5">Medium — 1.5x</option>
+        <option value="2">Sharp — 2x</option>
+      </select>
+    </div>
+    <div class="btnRow">
+      <button id="loadBtn" class="primary">Load map</button>
+      <button id="resetBtn">Reset camera</button>
+    </div>
+    <div id="log">Ready. Choose a .MAP file and press “Load map”.</div>
+  </div>
+
+  <!-- ---- Map info tab ---- -->
+  <div class="tabBody" id="tab-info"><div class="empty">Load a map to see its statistics.</div></div>
+
+  <!-- ---- Objects tab ---- -->
+  <div class="tabBody" id="tab-objects"><div class="empty">Load a map to browse its objects.</div></div>
+
+  <!-- ---- Navigate tab ---- -->
+  <div class="tabBody" id="tab-nav"><div class="empty">Load a map to jump between sectors.</div></div>
+</div>
+
+<!-- ===================== Minimap (top-down blueprint) ===================== -->
+<div id="miniWrap" class="hidden">
+  <div id="miniHead"><b>2D MAP</b><span>click = teleport</span></div>
+  <canvas id="mini" width="240" height="240"></canvas>
+</div>
+
+<!-- ===================== HUD + help ===================== -->
+<div id="hud">No map loaded.</div>
+<div id="help">
+  <span class="key">Click</span> lock mouse ·
+  <span class="key">WASD</span> move ·
+  <span class="key">Mouse</span> look ·
+  <span class="key">Shift</span> run ·
+  <span class="key">F</span> fly ·
+  <span class="key">N</span> noclip (through walls) ·
+  <span class="key">Space/Ctrl</span> up/down ·
+  <span class="key">R</span> reset ·
+  <span class="key">M</span> minimap ·
+  <span class="key">Tab</span> panel ·
+  <span class="key">Esc</span> release
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ============================================================================
+   BUILD / Mapster32 MAP Explorer — single-file WebGL viewer.
+
+   This is a static viewer (not EDuke32 in a browser). It parses the classic
+   BUILD .MAP format (v7/v8/v9), reconstructs sector/wall/sprite geometry, and
+   lets you walk, fly or noclip through the level. It can optionally read a
+   Duke3D GRP or loose ART + PALETTE.DAT to draw real textures; otherwise it
+   falls back to fast procedural colours.
+
+   Code layout:
+     1. Config           7. Textures
+     2. DOM refs         8. World geometry
+     3. Helpers          9. Camera & input
+     4. Binary reader   10. Collision & sectors
+     5. MAP parser      11. Matrices
+     6. Resources       12. Minimap
+                        13. Info panels
+                        14. Render loop / bootstrap
+============================================================================ */
+
+/* ============================ 1. CONFIG ============================ */
+const XY_SCALE      = 512;      // BUILD X/Y units per metre (horizontal).
+const Z_SCALE       = 8192;     // BUILD Z units per metre (vertical).
+const SPRITE_SCALE  = 2048;     // Divisor turning tile*repeat into world size.
+const EYE_HEIGHT    = 1.62;     // Camera height above the floor in metres.
+const PLAYER_RADIUS = 0.32;     // Collision radius in metres.
+const STEP_HEIGHT   = 0.45;     // Max auto-step height when walking.
+const MIN_CLEARANCE = 1.25;     // Min ceiling clearance to enter a sector.
+const WALK_SPEED    = 4.2;      // Metres/second walking.
+const RUN_MULT      = 1.9;      // Run multiplier.
+const MAX_DRAW_DIST = 1400;     // Far clip in metres.
+const SPRITE_CULL2  = 200 * 200;// Squared metre distance to skip billboards.
+
+/* ============================ 2. DOM REFS ============================ */
+const $ = id => document.getElementById(id);
+const canvas   = $("gl");
+const miniWrap = $("miniWrap");
+const miniCv   = $("mini");
+const hudEl    = $("hud");
+const logEl    = $("log");
+const panelEl  = $("panel");
+const optTextures  = $("optTextures");
+const optSprites   = $("optSprites");
+const optCollision = $("optCollision");
+const optMarkers   = $("optMarkers");
+const resolutionSel= $("resolution");
+
+/* ============================ 3. HELPERS ============================ */
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => (
+    {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]
+  ));
+}
+function setLog(msg){ logEl.textContent = msg; }
+function log(msg, cls){
+  const safe = escapeHtml(msg);
+  logEl.innerHTML += "\n" + (cls ? `<span class="${cls}">${safe}</span>` : safe);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+const fmt = n => n.toLocaleString("en-US");             // thousands separators
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+
+/* ============================ 4. BINARY READER ============================ */
+// Little-endian cursor reader with bounds checks for safety on malformed files.
+class Reader {
+  constructor(buf){ this.dv = new DataView(buf); this.arr = new Uint8Array(buf); this.o = 0; }
+  need(n){ if(this.o + n > this.dv.byteLength) throw new Error("Unexpected end of file at offset " + this.o); }
+  i8 (){ this.need(1); const v=this.dv.getInt8 (this.o); this.o+=1; return v; }
+  u8 (){ this.need(1); const v=this.dv.getUint8(this.o); this.o+=1; return v; }
+  i16(){ this.need(2); const v=this.dv.getInt16 (this.o,true); this.o+=2; return v; }
+  u16(){ this.need(2); const v=this.dv.getUint16(this.o,true); this.o+=2; return v; }
+  i32(){ this.need(4); const v=this.dv.getInt32 (this.o,true); this.o+=4; return v; }
+  u32(){ this.need(4); const v=this.dv.getUint32(this.o,true); this.o+=4; return v; }
+  bytes(n){ this.need(n); const v=this.arr.subarray(this.o,this.o+n); this.o+=n; return v; }
+  str(n){ const b=this.bytes(n); let s=""; for(const c of b) if(c) s+=String.fromCharCode(c); return s.trim(); }
+}
+
+/* ============================ 5. MAP PARSER ============================ */
+let mapData = null;   // parsed map
+let mapStats = null;  // derived statistics
+
+function parseMap(buffer){
+  const r = new Reader(buffer);
+  const mapversion = r.i32();
+  if(![7,8,9].includes(mapversion))
+    throw new Error("Unsupported MAP version " + mapversion + " (this viewer reads v7/v8/v9).");
+
+  const posx = r.i32(), posy = r.i32(), posz = r.i32();
+  const ang = r.i16(), cursectnum = r.i16();
+
+  const numsectors = r.u16();
+  if(numsectors < 1 || numsectors > 8192) throw new Error("Invalid sector count: " + numsectors);
+  const sectors = [];
+  for(let i=0;i<numsectors;i++){
+    sectors.push({
+      wallptr:r.i16(), wallnum:r.i16(),
+      ceilingz:r.i32(), floorz:r.i32(),
+      ceilingstat:r.i16(), floorstat:r.i16(),
+      ceilingpicnum:r.i16(), ceilingheinum:r.i16(),
+      ceilingshade:r.i8(), ceilingpal:r.u8(), ceilingxpanning:r.u8(), ceilingypanning:r.u8(),
+      floorpicnum:r.i16(), floorheinum:r.i16(),
+      floorshade:r.i8(), floorpal:r.u8(), floorxpanning:r.u8(), floorypanning:r.u8(),
+      visibility:r.u8(), filler:r.u8(),
+      lotag:r.i16(), hitag:r.i16(), extra:r.i16(),
+      loops:[], outerLoop:[], bbox:null, centroid:null, area:0, neighbors:[]
+    });
+  }
+
+  const numwalls = r.u16();
+  if(numwalls < 1 || numwalls > 131072) throw new Error("Invalid wall count: " + numwalls);
+  const walls = [];
+  for(let i=0;i<numwalls;i++){
+    walls.push({
+      x:r.i32(), y:r.i32(), point2:r.i16(), nextwall:r.i16(), nextsector:r.i16(), cstat:r.i16(),
+      picnum:r.i16(), overpicnum:r.i16(), shade:r.i8(), pal:r.u8(),
+      xrepeat:r.u8(), yrepeat:r.u8(), xpanning:r.u8(), ypanning:r.u8(),
+      lotag:r.i16(), hitag:r.i16(), extra:r.i16()
+    });
+  }
+
+  const numsprites = r.u16();
+  if(numsprites < 0 || numsprites > 16384) throw new Error("Invalid sprite count: " + numsprites);
+  const sprites = [];
+  for(let i=0;i<numsprites;i++){
+    sprites.push({
+      x:r.i32(), y:r.i32(), z:r.i32(), cstat:r.i16(), picnum:r.i16(),
+      shade:r.i8(), pal:r.u8(), clipdist:r.u8(), filler:r.u8(),
+      xrepeat:r.u8(), yrepeat:r.u8(), xoffset:r.i8(), yoffset:r.i8(),
+      sectnum:r.i16(), statnum:r.i16(), ang:r.i16(), owner:r.i16(),
+      xvel:r.i16(), yvel:r.i16(), zvel:r.i16(),
+      lotag:r.i16(), hitag:r.i16(), extra:r.i16()
+    });
+  }
+
+  const md = { mapversion, posx, posy, posz, ang, cursectnum, sectors, walls, sprites };
+  buildSectorInfo(md);
+  return md;
+}
+
+// Split each sector's walls into closed loops, find the outer loop, bbox,
+// centroid, area and neighbouring sectors — used for rendering and navigation.
+function buildSectorInfo(md){
+  for(let si=0; si<md.sectors.length; si++){
+    const s = md.sectors[si];
+    const start = s.wallptr, end = s.wallptr + s.wallnum;
+    if(start < 0 || end > md.walls.length || s.wallnum <= 0) continue;
+
+    const unvisited = new Set();
+    for(let wi=start; wi<end; wi++) unvisited.add(wi);
+    const loops = [];
+    while(unvisited.size){
+      const first = unvisited.values().next().value;
+      const loop = [];
+      let wi = first, guard = 0;
+      while(unvisited.has(wi) && guard++ < s.wallnum + 4){
+        unvisited.delete(wi);
+        loop.push(wi);
+        const next = md.walls[wi].point2;
+        if(next === first) break;
+        if(next < start || next >= end) break;
+        wi = next;
+      }
+      if(loop.length >= 3) loops.push(loop);
+    }
+    s.loops = loops;
+
+    // Outer loop = the one with the largest absolute area.
+    let best = null, bestArea = -1;
+    for(const loop of loops){
+      const pts = loop.map(i => ({x:md.walls[i].x, y:md.walls[i].y}));
+      const a = Math.abs(polyArea(pts));
+      if(a > bestArea){ bestArea = a; best = loop; }
+    }
+    s.outerLoop = best || loops[0] || [];
+    s.area = bestArea > 0 ? bestArea : 0;
+
+    let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity,cx=0,cy=0;
+    for(const wi of s.outerLoop){
+      const w = md.walls[wi];
+      minx=Math.min(minx,w.x); maxx=Math.max(maxx,w.x);
+      miny=Math.min(miny,w.y); maxy=Math.max(maxy,w.y);
+      cx+=w.x; cy+=w.y;
+    }
+    s.bbox = {minx,miny,maxx,maxy};
+    s.centroid = s.outerLoop.length ? {x:cx/s.outerLoop.length, y:cy/s.outerLoop.length} : {x:0,y:0};
+
+    const nset = new Set();
+    for(let wi=start; wi<end; wi++){
+      const ns = md.walls[wi].nextsector;
+      if(ns >= 0 && ns < md.sectors.length) nset.add(ns);
+    }
+    s.neighbors = [...nset];
+  }
+}
+
+/* --- Duke3D tile names & categories (from the Duke4 InfoSuite reference). --- */
+// A curated, gameplay-relevant subset so the Objects panel is meaningful.
+const TILE_NAMES = {
+  1:"SectorEffector",2:"Activator",3:"Touchplate",4:"ActivatorLocked",5:"MusicAndSFX",
+  6:"Locator",7:"Cycler",8:"MasterSwitch",9:"Respawn",10:"GPSpeed",
+  21:"Pistol",22:"Chaingun",23:"RPG",24:"Freezethrower",25:"Shrinker",
+  26:"Pipe Bomb",27:"Trip Bomb (pickup)",28:"Shotgun",29:"Devastator",
+  37:"Freeze ammo",40:"Pistol ammo",41:"Chaingun ammo",42:"Devastator ammo",44:"RPG ammo",
+  45:"Shrinker enlarger ammo",46:"Shrinker ammo",47:"Pipe bomb box",48:"Pistol ammo (lots)",49:"Shotgun ammo",
+  51:"Cola (10 HP)",52:"Six-pack (30 HP)",53:"First aid (medkit)",54:"Portable shield",55:"Steroids",
+  56:"Scuba gear",57:"Jetpack",59:"Heat sensor",61:"Protective boots",100:"Atomic health",1348:"Holoduke",
+  60:"Access card (key)",130:"Access switch",170:"Access switch 2",
+  132:"Slot door switch",134:"Light switch",136:"Space door switch",138:"Space light switch",
+  140:"Frankenstein switch",142:"Nuke button",146:"Multi switch",162:"Dip switch",164:"Dip switch 2",
+  166:"Tech switch",168:"Dip switch 3",712:"Light switch 2",860:"Power switch 1",862:"Lock switch",
+  864:"Power switch 2",1111:"Hand switch",1122:"Pull switch",1142:"Alien switch",4359:"Target",4361:"Duck",
+  940:"Bounce mine",1079:"Ooz filter",1227:"Nuke barrel",1238:"Exploding barrel",1247:"SeeNine (C9)",4360:"Gunpowder barrel",
+  675:"Egg",1550:"Shark",1680:"Assault Trooper",1681:"Trooper (running)",1682:"Trooper (stay)",
+  1715:"Trooper (shoot)",1725:"Trooper (jetpack)",1741:"Trooper on toilet",1810:"Cannon",
+  1820:"Octabrain",1821:"Octabrain (stay)",1880:"Sentry Drone",1920:"Assault Commander",1921:"Commander (stay)",
+  1960:"Recon car",1975:"Pig Cop Tank",2000:"Pig Cop",2001:"Pig Cop (stay)",2045:"Pig Cop (dive)",
+  2120:"Enforcer",2121:"Enforcer (stay)",2150:"Enforcer (spit)",2165:"Enforcer (jump)",
+  2360:"Rotate gun",2370:"Protozoid Slimer",2630:"Battlelord",2710:"Cycloid Emperor",
+  2760:"Overlord",4610:"Protector Drone",4740:"Alien Queen",1267:"Rat",2160:"Lizman feeding",2420:"Organtic",
+  616:"Pipe",618:"Pipe",619:"Pipe",911:"Cactus",1069:"Plug (electric)",1240:"Fire barrel",1250:"Steam",
+  1255:"Ceiling steam",1390:"Fire vase",2271:"Fire",2311:"Fire 2",2333:"Floor flame",1650:"Mortar shell",4340:"Lava bubble",
+  908:"Tree 1",909:"Tree 1",910:"Tree 2",951:"Box",978:"Cone",990:"Tire",1062:"Rubber can",
+  556:"Chair 1",557:"Chair 2",680:"Chair 3",669:"Vacuum",678:"Scale",694:"Pot 1",695:"Pot 2",697:"Pot 3",
+  765:"Vase",954:"Bottle",955:"Bottle",956:"Bottle",957:"Bottle",1012:"Bottle",1013:"Bottle",1014:"Bottle",1025:"Potted plant",
+  1045:"Donuts",1060:"Clock",551:"Dome light",979:"Hanging light",563:"Water fountain",569:"Toilet",571:"Stall",
+  921:"Toilet water",981:"Hydrant",1088:"Reactor",1092:"Reactor spark",621:"Camera",502:"Viewscreen",499:"Viewscreen 2",
+  1020:"Spotlight",660:"Water drip",662:"Bubble maker",1221:"Crane pole",1222:"Crane",
+  1226:"Blood pool",2200:"Feces",4389:"Puke",1346:"Helicopter",2491:"Duke car",762:"Microphone",
+  901:"Pool ball (stripe)",902:"Pool ball (cue)",903:"Pool pocket",1405:"Player start",
+  1352:"Monk",1353:"Space marine",1354:"Luke",1355:"Indy",3400:"Blimp",4570:"Duke burger",
+  753:"Statue",603:"Naked statue",1312:"Fem",1317:"Fem",1321:"Fem",4400:"Teddy bear",4407:"Robot mouse",
+  546:"Wall crack",547:"Wall crack",548:"Wall crack",549:"Wall crack",916:"Fire extinguisher",
+  4359:"Target",4361:"Duck",867:"ATM",1212:"Vending machine",1215:"Cola machine"
+};
+// SectorEffector (SE) lotag meanings for the object detail line.
+const SE_LOTAGS = {
+  0:"Rotating sector pivot",1:"Rotation pivot",2:"Earthquake",3:"Random light (after)",4:"Random light",
+  6:"Subway",7:"Teleporter",8:"Open-door light (up)",9:"Open-door light (down)",10:"Auto-close door",
+  11:"Swinging door",12:"Sector light switch",13:"Explosion (drop)",14:"Subway car",15:"Sliding door",
+  16:"Reactor",17:"Elevator / lift",18:"Vertical rise/fall",19:"Explodable ceiling",20:"Ceiling stretch",
+  21:"Sinking floor",22:"Two-part door",23:"One-way teleport",24:"Conveyor floor",25:"Piston",
+  26:"Escalator",27:"Cutscene camera",28:"Lightning",29:"Waves",30:"Two-way train",
+  31:"Floor rise/fall",32:"Ceiling rise/fall",33:"Quake debris",36:"Sprite shooter"
+};
+
+function tileName(pic){ return TILE_NAMES[pic] || ("Tile #" + pic); }
+
+// Broad category used for counts, list colours and minimap dots.
+function categoryOf(pic){
+  if(pic>=1 && pic<=10) return "marker";
+  if(pic===1405) return "start";
+  if(pic>=21 && pic<=29) return "weapon";
+  if([37,40,41,42,44,45,46,47,48,49].includes(pic)) return "ammo";
+  if([51,52,53,54,55,56,57,59,61,100,1348].includes(pic)) return "health";
+  if(pic===60) return "key";
+  if([130,132,134,136,138,140,142,146,162,164,166,168,170,712,860,862,864,1111,1122,1142,4359,4361].includes(pic)) return "switch";
+  if([940,1079,1227,1238,1247,4360].includes(pic)) return "explosive";
+  if(([675,1550,1810,1820,1821,1880,1920,1921,1960,1975,2000,2001,2045,2120,2121,2150,2165,2360,2370,2630,2710,2760,4610,4740,1267,2160,2420].includes(pic))
+     || (pic>=1680 && pic<=1744)) return "enemy";
+  if([616,618,619,994,995,996,911,1069,1240,1250,1255,1390,2271,2311,2333,4340,1650].includes(pic)) return "hazard";
+  return "decor";
+}
+const CAT_META = {
+  marker:  {label:"Effect markers", color:"#9aa7bd"},
+  start:   {label:"Player starts",  color:"#7db2ff"},
+  weapon:  {label:"Weapons",        color:"#ff9d5c"},
+  ammo:    {label:"Ammo",           color:"#f0b429"},
+  health:  {label:"Health / items", color:"#7ee081"},
+  key:     {label:"Keys",           color:"#ffd166"},
+  switch:  {label:"Switches",       color:"#c58bff"},
+  explosive:{label:"Explosives",    color:"#ff6f6f"},
+  enemy:   {label:"Enemies",        color:"#ff5d73"},
+  hazard:  {label:"Hazards",        color:"#ff8f4d"},
+  decor:   {label:"Decoration",     color:"#5fd3c4"}
+};
+
+// Decode a sprite cstat into a short human list.
+function spriteFlags(cstat){
+  const f=[]; const orient = cstat & 48;
+  f.push(orient===0?"face":orient===16?"wall":"floor");
+  if(cstat & 1) f.push("blocking");
+  if(cstat & 2) f.push("translucent");
+  if(cstat & 4) f.push("x-flip");
+  if(cstat & 8) f.push("y-flip");
+  if(cstat & 64) f.push("1-sided");
+  if(cstat & 128) f.push("centered");
+  if(cstat & 256) f.push("hitscan");
+  if(cstat & 32768) f.push("invisible");
+  return f.join(", ");
+}
+
+// Compute everything the Info/Objects/Navigate panels display.
+function computeStats(md){
+  const cats = {}; for(const k in CAT_META) cats[k]=0;
+  const picCount = new Map();
+  for(const sp of md.sprites){
+    const c = categoryOf(sp.picnum);
+    cats[c]++;
+    picCount.set(sp.picnum, (picCount.get(sp.picnum)||0)+1);
+  }
+  const wallPics = new Map();
+  let oneSided=0, twoSided=0, blocking=0, masked=0;
+  for(const w of md.walls){
+    wallPics.set(w.picnum,(wallPics.get(w.picnum)||0)+1);
+    if(w.nextsector < 0) oneSided++; else twoSided++;
+    if(w.cstat & 1) blocking++;
+    if(w.cstat & 16) masked++;
+  }
+  // World bounds (BUILD units) from all walls.
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const w of md.walls){
+    minx=Math.min(minx,w.x); maxx=Math.max(maxx,w.x);
+    miny=Math.min(miny,w.y); maxy=Math.max(maxy,w.y);
+  }
+  let floorArea=0; for(const s of md.sectors) floorArea += s.area;
+
+  const sectorTags = md.sectors.filter(s => s.lotag||s.hitag).length;
+  const spriteTags = md.sprites.filter(s => s.lotag||s.hitag).length;
+
+  // Sprite picnum histogram (top entries), with names.
+  const topPics = [...picCount.entries()]
+    .map(([pic,n]) => ({pic,n,name:tileName(pic),cat:categoryOf(pic)}))
+    .sort((a,b)=>b.n-a.n);
+
+  return {
+    version:md.mapversion, start:{x:md.posx,y:md.posy,z:md.posz,ang:md.ang,sector:md.cursectnum},
+    sectors:md.sectors.length, walls:md.walls.length, sprites:md.sprites.length,
+    cats, topPics, oneSided, twoSided, blocking, masked,
+    bounds:{minx,miny,maxx,maxy,w:maxx-minx,h:maxy-miny},
+    floorAreaM2:floorArea/(XY_SCALE*XY_SCALE),
+    sectorTags, spriteTags,
+    wallPicsTop:[...wallPics.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8)
+  };
+}
+
+/* ============================ 6. RESOURCES (GRP / ART / PALETTE) ============================ */
+let resources = resetResources();
+function resetResources(){ return { palette:null, tiles:new Map(), textures:new Map(), files:new Map() }; }
+
+async function loadResources(files){
+  resources = resetResources();
+  for(const file of files){
+    const name = file.name.toUpperCase();
+    const buf = await file.arrayBuffer();
+    if(name.endsWith(".GRP")){ log("Reading GRP: " + file.name); parseGrp(buf, resources.files); }
+    else resources.files.set(name, buf);
+  }
+  if(resources.files.has("PALETTE.DAT")){
+    try { parsePalette(resources.files.get("PALETTE.DAT")); log("PALETTE.DAT loaded.", "ok"); }
+    catch(e){ log("PALETTE.DAT error: " + e.message, "bad"); }
+  } else log("No PALETTE.DAT — using a synthetic palette.", "warn");
+
+  let count = 0;
+  for(const name of [...resources.files.keys()].filter(n => n.endsWith(".ART")).sort()){
+    try { parseArt(resources.files.get(name), name); count++; }
+    catch(e){ log("Error in " + name + ": " + e.message, "bad"); }
+  }
+  log(count + " ART file(s) loaded.", count ? "ok" : "warn");
+}
+
+function parseGrp(buffer, out){
+  const r = new Reader(buffer);
+  if(r.str(12) !== "KenSilverman") throw new Error("Invalid GRP (expected KenSilverman signature).");
+  const count = r.u32();
+  if(count < 1 || count > 20000) throw new Error("Invalid GRP entry count: " + count);
+  const headers = [];
+  for(let i=0;i<count;i++) headers.push({ name:r.str(12).toUpperCase(), size:r.u32() });
+  let off = 16 + count * 16;
+  for(const h of headers){
+    if(off + h.size <= buffer.byteLength) out.set(h.name, buffer.slice(off, off + h.size));
+    off += h.size;
+  }
+  log("GRP contains " + out.size + " internal file(s).");
+}
+
+function parsePalette(buffer){
+  const u = new Uint8Array(buffer);
+  if(u.length < 768) throw new Error("PALETTE.DAT smaller than 768 bytes.");
+  const pal = new Uint8Array(256*4);
+  for(let i=0;i<256;i++){                 // VGA 6-bit channels -> 8-bit.
+    pal[i*4+0]=Math.min(255,u[i*3+0]*4);
+    pal[i*4+1]=Math.min(255,u[i*3+1]*4);
+    pal[i*4+2]=Math.min(255,u[i*3+2]*4);
+    pal[i*4+3]=255;
+  }
+  resources.palette = pal;
+}
+
+function parseArt(buffer, name){
+  const r = new Reader(buffer);
+  if(r.i32() !== 1) throw new Error("Unsupported ART version in " + name);
+  r.i32();                                 // legacy numtiles (ignored)
+  const start = r.i32(), end = r.i32();
+  const count = end - start + 1;
+  if(count <= 0 || count > 20000) throw new Error("Invalid tile range " + start + "-" + end);
+  const xs=[], ys=[], anm=[];
+  for(let i=0;i<count;i++) xs.push(r.i16());
+  for(let i=0;i<count;i++) ys.push(r.i16());
+  for(let i=0;i<count;i++) anm.push(r.i32());
+  for(let i=0;i<count;i++){
+    const w=xs[i], h=ys[i], tile=start+i;
+    if(w<0 || h<0 || w*h > 4096*4096) throw new Error("Invalid tile " + tile);
+    const data = (w && h) ? r.bytes(w*h) : new Uint8Array(0);
+    resources.tiles.set(tile, {w,h,picanm:anm[i],data});
+  }
+}
+
+/* ============================ WEBGL SETUP ============================ */
+let gl=null, program=null, whiteTex=null;
+let fallbackTextures = new Map();
+
+const VS = `
+attribute vec3 aPos; attribute vec2 aUv; attribute vec4 aColor;
+uniform mat4 uMVP; varying vec2 vUv; varying vec4 vColor;
+void main(){ gl_Position = uMVP * vec4(aPos,1.0); vUv = aUv; vColor = aColor; }`;
+const FS = `
+precision mediump float;
+uniform sampler2D uTex; uniform float uUseTex;
+varying vec2 vUv; varying vec4 vColor;
+void main(){
+  vec4 t = texture2D(uTex, vUv);
+  if(uUseTex < 0.5) t = vec4(1.0);
+  vec4 c = t * vColor;
+  if(c.a < 0.08) discard;
+  gl_FragColor = c;
+}`;
+
+function initGL(){
+  if(gl) return;
+  gl = canvas.getContext("webgl", {alpha:false,antialias:false,depth:true,powerPreference:"high-performance"});
+  if(!gl) throw new Error("WebGL is not available in this browser.");
+  program = createProgram(VS, FS);
+  gl.useProgram(program);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+  gl.disable(gl.CULL_FACE);            // BUILD polygons face both ways
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  whiteTex = solidTexture([255,255,255,255]);
+}
+function compile(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function createProgram(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  p.aPos=gl.getAttribLocation(p,"aPos"); p.aUv=gl.getAttribLocation(p,"aUv"); p.aColor=gl.getAttribLocation(p,"aColor");
+  p.uMVP=gl.getUniformLocation(p,"uMVP"); p.uTex=gl.getUniformLocation(p,"uTex"); p.uUseTex=gl.getUniformLocation(p,"uUseTex");
+  return p;
+}
+function solidTexture(rgba){
+  const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(rgba));
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  return {tex:t,w:1,h:1,real:false};
+}
+function makeBuffer(data, usage){ const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,data,usage||gl.STATIC_DRAW); return b; }
+const isPOT = v => v>0 && (v & (v-1))===0;
+
+/* ============================ 7. TEXTURES ============================ */
+function getTexture(pic, alpha){
+  pic = Math.max(0, pic|0);
+  const key = pic + ":" + (alpha?1:0);
+  if(resources.textures.has(key)) return resources.textures.get(key);
+
+  const tile = resources.tiles.get(pic);
+  if(tile && tile.w>0 && tile.h>0){
+    const pal = resources.palette || synthPalette();
+    const rgba = new Uint8Array(tile.w*tile.h*4);
+    for(let x=0;x<tile.w;x++)                       // ART data is column-major
+      for(let y=0;y<tile.h;y++){
+        const idx = tile.data[x*tile.h+y] || 0;
+        const di = (y*tile.w+x)*4;
+        rgba[di]=pal[idx*4]; rgba[di+1]=pal[idx*4+1]; rgba[di+2]=pal[idx*4+2];
+        rgba[di+3] = (alpha && idx===255) ? 0 : 255; // palette 255 == transparent
+      }
+    const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,tile.w,tile.h,0,gl.RGBA,gl.UNSIGNED_BYTE,rgba);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    const wrap = (isPOT(tile.w)&&isPOT(tile.h)) ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,wrap);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,wrap);
+    const obj={tex,w:tile.w,h:tile.h,real:true};
+    resources.textures.set(key,obj); return obj;
+  }
+  if(fallbackTextures.has(key)) return fallbackTextures.get(key);
+  const obj = fallbackTexture(pic); fallbackTextures.set(key,obj); return obj;
+}
+function synthPalette(){
+  const p=new Uint8Array(256*4);
+  for(let i=0;i<256;i++){ p[i*4]=i; p[i*4+1]=(i*47)%256; p[i*4+2]=(i*103)%256; p[i*4+3]=255; }
+  return p;
+}
+function fallbackTexture(pic){
+  const s=32, d=new Uint8Array(s*s*4);
+  const r=(pic*53)%256, g=(pic*97)%256, b=(pic*151)%256;
+  for(let y=0;y<s;y++) for(let x=0;x<s;x++){
+    const c=(((x>>3)^(y>>3))&1)?1.0:0.64, i=(y*s+x)*4;
+    d[i]=r*c; d[i+1]=g*c; d[i+2]=b*c; d[i+3]=255;
+  }
+  const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,s,s,0,gl.RGBA,gl.UNSIGNED_BYTE,d);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  return {tex,w:s,h:s,real:false};
+}
+
+/* ============================ 8. WORLD GEOMETRY ============================ */
+let worldGroups = [];   // static geometry batched by texture
+let wallSegments = [];   // collision segments (BUILD units)
+let billboards = [];     // face sprites drawn each frame
+let spriteBatch = {pos:null,uv:null,col:null,cap:0,fpos:null,fuv:null,fcol:null};
+
+const shadeColor = shade => { const v = clamp(1 - (shade||0)/44, 0.20, 1.35); return [v,v,v,1]; };
+const zToY = z => -z / Z_SCALE;                 // BUILD z (down) -> world y (up)
+
+function buildWorld(md){
+  deleteWorld();
+  wallSegments = [];
+  billboards = [];
+
+  // Batch static triangles by texture key.
+  const groups = new Map();
+  const grp = (pic,alpha) => {
+    const k = (pic|0)+":"+(alpha?1:0);
+    if(!groups.has(k)) groups.set(k,{pic:pic|0,alpha:!!alpha,pos:[],uv:[],col:[]});
+    return groups.get(k);
+  };
+  const tri = (g,a,b,c,ua,ub,uc,col) => {
+    g.pos.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]);
+    g.uv.push(ua[0],ua[1],ub[0],ub[1],uc[0],uc[1]);
+    g.col.push(...col,...col,...col);
+  };
+  const quad = (pic,alpha,v0,v1,v2,v3,uv0,uv1,uv2,uv3,shade) => {
+    const g=grp(pic,alpha), col=shadeColor(shade);
+    tri(g,v0,v1,v2,uv0,uv1,uv2,col); tri(g,v0,v2,v3,uv0,uv2,uv3,col);
+  };
+
+  // ---- Sectors: floors, ceilings, walls ----
+  for(let si=0; si<md.sectors.length; si++){
+    const sec = md.sectors[si];
+
+    // Floor & ceiling (outer loop only; inner loops stay open as holes).
+    for(const loop of sec.loops){
+      if(loop !== sec.outerLoop || loop.length < 3) continue;
+      const pts = loop.map(wi => ({x:md.walls[wi].x, y:md.walls[wi].y}));
+      const tris = triangulate(pts);
+      const fy = zToY(sec.floorz), cy = zToY(sec.ceilingz);
+      for(const t of tris){
+        const fv = t.map(i => [pts[i].x/XY_SCALE, fy, -pts[i].y/XY_SCALE]);
+        const fuv= t.map(i => [(pts[i].x + sec.floorxpanning*8)/512, (pts[i].y + sec.floorypanning*8)/512]);
+        tri(grp(sec.floorpicnum,false), fv[0],fv[1],fv[2], fuv[0],fuv[1],fuv[2], shadeColor(sec.floorshade));
+        const o=[t[2],t[1],t[0]];                       // reverse winding for ceiling
+        const cv = o.map(i => [pts[i].x/XY_SCALE, cy, -pts[i].y/XY_SCALE]);
+        const cuv= o.map(i => [(pts[i].x + sec.ceilingxpanning*8)/512, (pts[i].y + sec.ceilingypanning*8)/512]);
+        tri(grp(sec.ceilingpicnum,false), cv[0],cv[1],cv[2], cuv[0],cuv[1],cuv[2], shadeColor(sec.ceilingshade));
+      }
+    }
+
+    // Walls of this sector.
+    for(let wi=sec.wallptr; wi<sec.wallptr+sec.wallnum; wi++){
+      const w = md.walls[wi], w2 = md.walls[w.point2];
+      if(!w2) continue;
+      const x1=w.x/XY_SCALE, z1=-w.y/XY_SCALE, x2=w2.x/XY_SCALE, z2=-w2.y/XY_SCALE;
+      const len = Math.hypot(w2.x-w.x, w2.y-w.y);
+      const tex = getTexture(w.picnum,false);
+      const u0 = w.xpanning / Math.max(1,tex.w);
+      const u1 = u0 + len/Math.max(256, tex.w*8) * Math.max(1,w.xrepeat)/8;
+      const uv = (topZ,botZ) => {
+        const h = Math.abs(botZ-topZ);
+        const v0 = w.ypanning/Math.max(1,tex.h);
+        const v1 = v0 + h/Math.max(1024, tex.h*128) * Math.max(1,w.yrepeat)/8;
+        return [[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
+      };
+
+      const solid = w.nextsector < 0 || w.nextsector >= md.sectors.length;
+      if(solid){
+        const u = uv(sec.ceilingz, sec.floorz);
+        quad(w.picnum,false,[x1,zToY(sec.ceilingz),z1],[x2,zToY(sec.ceilingz),z2],
+                            [x2,zToY(sec.floorz),z2],[x1,zToY(sec.floorz),z1], u[0],u[1],u[2],u[3], w.shade);
+      } else {
+        const ns = md.sectors[w.nextsector];
+        if(ns.ceilingz > sec.ceilingz){                 // upper step
+          const u=uv(sec.ceilingz,ns.ceilingz);
+          quad(w.picnum,false,[x1,zToY(sec.ceilingz),z1],[x2,zToY(sec.ceilingz),z2],
+                              [x2,zToY(ns.ceilingz),z2],[x1,zToY(ns.ceilingz),z1], u[0],u[1],u[2],u[3], w.shade);
+        }
+        if(ns.floorz < sec.floorz){                     // lower step
+          const u=uv(ns.floorz,sec.floorz);
+          quad(w.picnum,false,[x1,zToY(ns.floorz),z1],[x2,zToY(ns.floorz),z2],
+                              [x2,zToY(sec.floorz),z2],[x1,zToY(sec.floorz),z1], u[0],u[1],u[2],u[3], w.shade);
+        }
+        if(w.cstat & 16){                               // masked / one-way wall
+          const pic = w.overpicnum >= 0 ? w.overpicnum : w.picnum;
+          const top = Math.max(zToY(sec.ceilingz),zToY(ns.ceilingz));
+          const bot = Math.min(zToY(sec.floorz),zToY(ns.floorz));
+          const u = uv(Math.min(sec.ceilingz,ns.ceilingz), Math.max(sec.floorz,ns.floorz));
+          quad(pic,true,[x1,top,z1],[x2,top,z2],[x2,bot,z2],[x1,bot,z1], u[0],u[1],u[2],u[3], w.shade);
+        }
+      }
+
+      // Collision: solid walls, blocking walls, and impassable height changes.
+      let blocks = solid || !!(w.cstat & 1);
+      if(!blocks && w.nextsector>=0 && w.nextsector<md.sectors.length){
+        const ns=md.sectors[w.nextsector];
+        if(zToY(ns.floorz)-zToY(sec.floorz) > STEP_HEIGHT) blocks=true;
+        if(zToY(ns.ceilingz)-(zToY(ns.floorz)+EYE_HEIGHT) < (MIN_CLEARANCE-EYE_HEIGHT)) blocks=true;
+      }
+      if(blocks) wallSegments.push({x1:w.x,y1:w.y,x2:w2.x,y2:w2.y,sector:si});
+    }
+  }
+
+  // ---- Sprites: face -> billboards; wall/floor -> static quads ----
+  for(const sp of md.sprites){
+    if((sp.cstat & 32768) || sp.picnum < 0) continue;
+    if(sp.sectnum < 0 || sp.sectnum >= md.sectors.length) continue;
+    const orient = sp.cstat & 48;
+    if(orient === 0){ billboards.push(sp); continue; }   // face sprite -> per frame
+
+    // Static wall/floor sprite quad.
+    const tex = getTexture(sp.picnum, true);
+    const wm = Math.max(0.05, (tex.w||32) * Math.max(1,sp.xrepeat) / SPRITE_SCALE);
+    const hm = Math.max(0.05, (tex.h||32) * Math.max(1,sp.yrepeat) / SPRITE_SCALE);
+    const wx = sp.x/XY_SCALE, wz = -sp.y/XY_SCALE, wy = zToY(sp.z);
+    const a  = sp.ang * Math.PI/1024;                    // BUILD angle -> radians
+    const dir=[Math.cos(a), -Math.sin(a)];              // facing in world XZ
+
+    if(orient === 32 || orient === 48){                 // floor sprite (flat quad)
+      const ux=dir[0]*wm/2, uz=dir[1]*wm/2;             // half along facing
+      const vx=-dir[1]*hm/2, vz=dir[0]*hm/2;            // half perpendicular
+      const g=grp(sp.picnum,true), col=shadeColor(sp.shade);
+      const p=(sx,sz)=>[wx+sx,wy+0.02,wz+sz];
+      tri(g,p(-ux-vx,-uz-vz),p(ux-vx,uz-vz),p(ux+vx,uz+vz),[0,1],[1,1],[1,0],col);
+      tri(g,p(-ux-vx,-uz-vz),p(ux+vx,uz+vz),p(-ux+vx,-uz+vz),[0,1],[1,0],[0,0],col);
+    } else {                                             // wall sprite (vertical quad)
+      const px=-dir[1]*wm/2, pz=dir[0]*wm/2;            // half width along wall
+      const bottom=wy, top=wy+hm;
+      quad(sp.picnum,true,[wx-px,top,wz-pz],[wx+px,top,wz+pz],
+                          [wx+px,bottom,wz+pz],[wx-px,bottom,wz-pz],[0,0],[1,0],[1,1],[0,1],sp.shade);
+    }
+  }
+
+  worldGroups = [...groups.values()].map(uploadGroup).filter(g => g.n > 0);
+  allocSpriteBatch(billboards.length);
+  log("Geometry built: " + worldGroups.length + " draw groups, " + wallSegments.length +
+      " collision segments, " + billboards.length + " billboards, " +
+      (md.sprites.length - billboards.length) + " flat sprites.", "ok");
+}
+
+function uploadGroup(g){
+  return { pic:g.pic, alpha:g.alpha, n:g.pos.length/3,
+    pos:makeBuffer(new Float32Array(g.pos)), uv:makeBuffer(new Float32Array(g.uv)),
+    col:makeBuffer(new Float32Array(g.col)), tex:getTexture(Math.max(0,g.pic), g.alpha) };
+}
+function deleteWorld(){
+  if(gl) for(const g of worldGroups){ gl.deleteBuffer(g.pos); gl.deleteBuffer(g.uv); gl.deleteBuffer(g.col); }
+  worldGroups=[]; wallSegments=[]; billboards=[];
+}
+// Preallocate reusable buffers/arrays for billboards (no per-frame allocation).
+function allocSpriteBatch(count){
+  const verts = Math.max(6, count*6);
+  if(!spriteBatch.pos){ spriteBatch.pos=gl.createBuffer(); spriteBatch.uv=gl.createBuffer(); spriteBatch.col=gl.createBuffer(); }
+  if(spriteBatch.cap < verts){
+    spriteBatch.cap = verts;
+    spriteBatch.fpos = new Float32Array(verts*3);
+    spriteBatch.fuv  = new Float32Array(verts*2);
+    spriteBatch.fcol = new Float32Array(verts*4);
+  }
+}
+
+/* ---- Ear-clipping triangulation with a fan fallback for bad polygons ---- */
+function polyArea(p){ let a=0; for(let i=0,j=p.length-1;i<p.length;j=i++) a+=p[j].x*p[i].y-p[i].x*p[j].y; return a/2; }
+function triangulate(points){
+  const n=points.length; if(n<3) return [];
+  let idx=[...Array(n).keys()];
+  if(polyArea(points) < 0) idx.reverse();
+  const tris=[]; let guard=0;
+  while(idx.length>3 && guard++ < n*n){
+    let ear=false;
+    for(let i=0;i<idx.length;i++){
+      const i0=idx[(i-1+idx.length)%idx.length], i1=idx[i], i2=idx[(i+1)%idx.length];
+      const a=points[i0], b=points[i1], c=points[i2];
+      if(!convex(a,b,c)) continue;
+      let inside=false;
+      for(const k of idx){ if(k===i0||k===i1||k===i2) continue; if(inTri(points[k],a,b,c)){ inside=true; break; } }
+      if(inside) continue;
+      tris.push([i0,i1,i2]); idx.splice(i,1); ear=true; break;
+    }
+    if(!ear) break;
+  }
+  if(idx.length===3) tris.push([idx[0],idx[1],idx[2]]);
+  if(!tris.length) for(let i=1;i<n-1;i++) tris.push([0,i,i+1]);
+  return tris;
+}
+const convex=(a,b,c)=>((b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))>0;
+function inTri(p,a,b,c){
+  const v0x=c.x-a.x,v0y=c.y-a.y,v1x=b.x-a.x,v1y=b.y-a.y,v2x=p.x-a.x,v2y=p.y-a.y;
+  const d00=v0x*v0x+v0y*v0y,d01=v0x*v1x+v0y*v1y,d02=v0x*v2x+v0y*v2y,d11=v1x*v1x+v1y*v1y,d12=v1x*v2x+v1y*v2y;
+  const inv=1/Math.max(1e-12,d00*d11-d01*d01), u=(d11*d02-d01*d12)*inv, v=(d00*d12-d01*d02)*inv;
+  return u>=0 && v>=0 && u+v<=1;
+}
+
+/* ============================ 9. CAMERA & INPUT ============================ */
+const cam = {x:0,y:1.6,z:0,yaw:0,pitch:0,sector:-1,fly:true,noclip:false};
+let moveSpeed = WALK_SPEED;
+const keys = new Set();
+
+document.addEventListener("keydown", e => {
+  // Ignore shortcuts/movement while typing in a filter or select.
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if(e.code === "Tab") e.preventDefault();
+  keys.add(e.code);
+  if(e.code==="KeyF"){ cam.fly=!cam.fly; if(!cam.fly) cam.noclip=false; }
+  if(e.code==="KeyN"){ cam.noclip=!cam.noclip; if(cam.noclip) cam.fly=true; }
+  if(e.code==="KeyR") resetCamera();
+  if(e.code==="KeyM") miniWrap.classList.toggle("hidden");
+  if(e.code==="Tab")  panelEl.classList.toggle("hidden");
+});
+document.addEventListener("keyup", e => keys.delete(e.code));
+canvas.addEventListener("click", () => { canvas.focus(); if(canvas.requestPointerLock) canvas.requestPointerLock(); });
+document.addEventListener("mousemove", e => {
+  if(document.pointerLockElement !== canvas) return;
+  cam.yaw   -= e.movementX * 0.0022;
+  cam.pitch  = clamp(cam.pitch - e.movementY*0.0022, -1.5, 1.5);
+});
+canvas.addEventListener("wheel", e => { moveSpeed = clamp(moveSpeed * (e.deltaY<0?1.12:0.9), 1.2, 40); e.preventDefault(); }, {passive:false});
+
+function resetCamera(){
+  if(!mapData) return;
+  cam.x = mapData.posx/XY_SCALE;
+  cam.z = -mapData.posy/XY_SCALE;
+  cam.yaw = -mapData.ang * Math.PI/1024;
+  cam.pitch = 0; cam.noclip = false; cam.fly = true;
+  cam.sector = validSector(mapData.cursectnum) ? mapData.cursectnum : findSector(mapData.posx,mapData.posy);
+  const sec = mapData.sectors[cam.sector] || mapData.sectors[0];
+  if(sec) cam.y = zToY(sec.floorz) + EYE_HEIGHT;
+}
+const validSector = s => mapData && s>=0 && s<mapData.sectors.length;
+
+// Teleport to a sector centre or a specific sprite (used by the Navigate/Objects tabs).
+function teleportToSector(si){
+  if(!validSector(si)) return;
+  const s = mapData.sectors[si];
+  cam.x = s.centroid.x/XY_SCALE; cam.z = -s.centroid.y/XY_SCALE;
+  cam.y = zToY(s.floorz) + EYE_HEIGHT; cam.sector = si;
+  canvas.focus();
+}
+function teleportToSprite(sp){
+  cam.x = sp.x/XY_SCALE; cam.z = -sp.y/XY_SCALE;
+  cam.y = zToY(sp.z) + EYE_HEIGHT*0.6;
+  if(validSector(sp.sectnum)) cam.sector = sp.sectnum;
+  canvas.focus();
+}
+
+function update(dt){
+  if(!mapData) return;
+  const run = keys.has("ShiftLeft")||keys.has("ShiftRight");
+  const speed = moveSpeed * (run?RUN_MULT:1) * dt;
+  const free = cam.fly || cam.noclip;
+
+  // Forward vector: full 3D when flying/noclip, horizontal-only when walking.
+  const cp = Math.cos(cam.pitch);
+  const fwd = free ? [Math.cos(cam.yaw)*cp, Math.sin(cam.pitch), Math.sin(cam.yaw)*cp]
+                   : [Math.cos(cam.yaw), 0, Math.sin(cam.yaw)];
+  const right = [Math.cos(cam.yaw+Math.PI/2), 0, Math.sin(cam.yaw+Math.PI/2)];
+
+  let mx=0,my=0,mz=0;
+  if(keys.has("KeyW")){ mx+=fwd[0]; my+=fwd[1]; mz+=fwd[2]; }
+  if(keys.has("KeyS")){ mx-=fwd[0]; my-=fwd[1]; mz-=fwd[2]; }
+  if(keys.has("KeyD")){ mx+=right[0]; mz+=right[2]; }
+  if(keys.has("KeyA")){ mx-=right[0]; mz-=right[2]; }
+  const len=Math.hypot(mx,my,mz);
+  if(len>0){ mx=mx/len*speed; my=my/len*speed; mz=mz/len*speed; }
+
+  if(cam.noclip){
+    cam.x+=mx; cam.y+=my; cam.z+=mz;                    // free flight, no checks
+    if(keys.has("Space")) cam.y+=speed;
+    if(keys.has("ControlLeft")||keys.has("ControlRight")) cam.y-=speed;
+    const b=worldToBuild(cam.x,cam.z);                  // keep HUD sector current
+    const s=findSector(b.x,b.y,cam.sector); if(s>=0) cam.sector=s;
+    return;
+  }
+
+  if(len>0) moveTo(cam.x+mx, cam.z+mz);                 // horizontal move with collision
+  if(cam.fly){
+    cam.y += my;
+    if(keys.has("Space")) cam.y+=speed;
+    if(keys.has("ControlLeft")||keys.has("ControlRight")) cam.y-=speed;
+  } else {
+    const b = worldToBuild(cam.x,cam.z);
+    const s = findSector(b.x,b.y,cam.sector);
+    if(s>=0) cam.sector=s;
+    const sec = mapData.sectors[cam.sector];
+    if(sec) cam.y += (zToY(sec.floorz)+EYE_HEIGHT - cam.y) * Math.min(1, dt*16); // smooth to floor
+  }
+}
+
+function moveTo(nx,nz){
+  const b = worldToBuild(nx,nz);
+  const ns = findSector(b.x,b.y,cam.sector);
+  if(ns < 0) return false;                              // outside the map
+  if(optCollision.checked && blocksAt(b.x,b.y,ns)) return false;
+  if(!cam.fly){
+    const os=mapData.sectors[cam.sector], nsec=mapData.sectors[ns];
+    if(os && nsec){
+      if(zToY(nsec.floorz)-zToY(os.floorz) > STEP_HEIGHT) return false;
+      if(zToY(nsec.ceilingz)-(zToY(nsec.floorz)+EYE_HEIGHT) < (MIN_CLEARANCE-EYE_HEIGHT)) return false;
+    }
+  }
+  cam.x=nx; cam.z=nz; cam.sector=ns; return true;
+}
+const worldToBuild = (x,z) => ({x:x*XY_SCALE, y:-z*XY_SCALE});
+
+/* ============================ 10. SECTORS & COLLISION ============================ */
+function findSector(x,y,prefer=-1){
+  if(!mapData) return -1;
+  if(validSector(prefer) && pointInSector(x,y,prefer)) return prefer;
+  if(validSector(prefer)) for(const n of mapData.sectors[prefer].neighbors) if(pointInSector(x,y,n)) return n;
+  for(let si=0; si<mapData.sectors.length; si++){
+    const b=mapData.sectors[si].bbox;
+    if(!b || x<b.minx||x>b.maxx||y<b.miny||y>b.maxy) continue;
+    if(pointInSector(x,y,si)) return si;
+  }
+  return -1;
+}
+function pointInSector(x,y,si){
+  const s=mapData.sectors[si];
+  if(!s||!s.outerLoop||s.outerLoop.length<3) return false;
+  const b=s.bbox; if(b && (x<b.minx||x>b.maxx||y<b.miny||y>b.maxy)) return false;
+  if(!inLoop(x,y,s.outerLoop)) return false;
+  for(const loop of s.loops){ if(loop===s.outerLoop) continue; if(inLoop(x,y,loop)) return false; }
+  return true;
+}
+function inLoop(x,y,loop){
+  let inside=false;
+  for(let a=0,b=loop.length-1; a<loop.length; b=a++){
+    const wa=mapData.walls[loop[a]], wb=mapData.walls[loop[b]];
+    if(((wa.y>y)!==(wb.y>y)) && (x < (wb.x-wa.x)*(y-wa.y)/(wb.y-wa.y+1e-9)+wa.x)) inside=!inside;
+  }
+  return inside;
+}
+function blocksAt(x,y,sector){
+  const r = PLAYER_RADIUS*XY_SCALE;
+  const cand = new Set([sector,cam.sector]);
+  if(validSector(sector)) for(const n of mapData.sectors[sector].neighbors) cand.add(n);
+  if(validSector(cam.sector)) for(const n of mapData.sectors[cam.sector].neighbors) cand.add(n);
+  for(const seg of wallSegments){
+    if(!cand.has(seg.sector)) continue;
+    if(distSeg(x,y,seg.x1,seg.y1,seg.x2,seg.y2) < r) return true;
+  }
+  return false;
+}
+function distSeg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,l2=dx*dx+dy*dy;
+  if(l2<=1e-9) return Math.hypot(px-x1,py-y1);
+  const t=clamp(((px-x1)*dx+(py-y1)*dy)/l2,0,1);
+  return Math.hypot(px-(x1+t*dx), py-(y1+t*dy));
+}
+
+/* ============================ 11. MATRICES ============================ */
+function perspective(fovy,aspect,near,far){
+  const f=1/Math.tan(fovy/2), nf=1/(near-far);
+  return new Float32Array([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]);
+}
+function lookAt(eye,center,up){
+  let zx=eye[0]-center[0],zy=eye[1]-center[1],zz=eye[2]-center[2];
+  let zl=Math.hypot(zx,zy,zz)||1; zx/=zl; zy/=zl; zz/=zl;
+  let xx=up[1]*zz-up[2]*zy,xy=up[2]*zx-up[0]*zz,xz=up[0]*zy-up[1]*zx;
+  let xl=Math.hypot(xx,xy,xz)||1; xx/=xl; xy/=xl; xz/=xl;
+  const yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  return new Float32Array([xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+    -(xx*eye[0]+xy*eye[1]+xz*eye[2]), -(yx*eye[0]+yy*eye[1]+yz*eye[2]), -(zx*eye[0]+zy*eye[1]+zz*eye[2]), 1]);
+}
+function mul(a,b){
+  const o=new Float32Array(16);
+  for(let c=0;c<4;c++) for(let r=0;r<4;r++)
+    o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+  return o;
+}
+
+/* ============================ 12. MINIMAP (2D blueprint) ============================ */
+let miniT = null;   // world->screen transform for the minimap
+function setupMinimap(){
+  const s = mapStats.bounds;
+  const W = miniCv.width, H = miniCv.height, pad = 12;
+  const sx = (W-2*pad)/Math.max(1,s.w), sy = (H-2*pad)/Math.max(1,s.h);
+  const scale = Math.min(sx,sy);
+  miniT = {
+    scale, minx:s.minx, miny:s.miny, maxy:s.maxy,
+    offx: pad + (W-2*pad - s.w*scale)/2,
+    offy: pad + (H-2*pad - s.h*scale)/2
+  };
+  miniWrap.classList.remove("hidden");
+}
+// BUILD (x,y) -> minimap pixel. Y is inverted so north points up (Mapster style).
+const miniPt = (bx,by) => ({
+  x: miniT.offx + (bx - miniT.minx) * miniT.scale,
+  y: miniT.offy + (miniT.maxy - by) * miniT.scale
+});
+function drawMinimap(){
+  if(!mapData || !miniT || miniWrap.classList.contains("hidden")) return;
+  const c = miniCv.getContext("2d"), W=miniCv.width, H=miniCv.height;
+  c.clearRect(0,0,W,H); c.fillStyle="#04060a"; c.fillRect(0,0,W,H);
+
+  // Walls: two-sided dim cyan, one-sided bright cyan.
+  c.lineWidth=1;
+  for(const w of mapData.walls){
+    const w2=mapData.walls[w.point2]; if(!w2) continue;
+    const a=miniPt(w.x,w.y), b=miniPt(w2.x,w2.y);
+    c.strokeStyle = w.nextsector<0 ? "rgba(63,217,200,.85)" : "rgba(63,217,200,.22)";
+    c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
+  }
+  // Sprites: coloured dots by category.
+  for(const sp of mapData.sprites){
+    if(sp.cstat & 32768) continue;
+    if(!optMarkers.checked && categoryOf(sp.picnum)==="marker") continue;
+    const p=miniPt(sp.x,sp.y);
+    c.fillStyle = (CAT_META[categoryOf(sp.picnum)]||CAT_META.decor).color;
+    c.fillRect(p.x-1.3,p.y-1.3,2.6,2.6);
+  }
+  // Player arrow.
+  const b = worldToBuild(cam.x,cam.z);
+  const p = miniPt(b.x,b.y);
+  const d = [Math.cos(cam.yaw), -Math.sin(cam.yaw)];    // world XZ heading
+  const tip = miniPt(b.x + d[0]*600, b.y - d[1]*600);   // build y = -worldZ
+  const dx=tip.x-p.x, dy=tip.y-p.y, dl=Math.hypot(dx,dy)||1, ux=dx/dl, uy=dy/dl, px=-uy, py=ux;
+  c.fillStyle="#f0b429";
+  c.beginPath();
+  c.moveTo(p.x+ux*7, p.y+uy*7);
+  c.lineTo(p.x-ux*4+px*4, p.y-uy*4+py*4);
+  c.lineTo(p.x-ux*4-px*4, p.y-uy*4-py*4);
+  c.closePath(); c.fill();
+}
+// Click on the minimap -> teleport to that world position.
+miniCv.addEventListener("click", e => {
+  if(!mapData || !miniT) return;
+  const rect = miniCv.getBoundingClientRect();
+  const px = (e.clientX-rect.left) * (miniCv.width/rect.width);
+  const py = (e.clientY-rect.top)  * (miniCv.height/rect.height);
+  const bx = (px - miniT.offx)/miniT.scale + miniT.minx;
+  const by = miniT.maxy - (py - miniT.offy)/miniT.scale;
+  cam.x = bx/XY_SCALE; cam.z = -by/XY_SCALE;
+  const si = findSector(bx,by,cam.sector);
+  if(si>=0){ cam.sector=si; if(!cam.fly && !cam.noclip) cam.y = zToY(mapData.sectors[si].floorz)+EYE_HEIGHT; }
+  canvas.focus();
+});
+
+/* ============================ 13. INFO PANELS ============================ */
+function bar(name,color,value,max){
+  const pct = max>0 ? Math.round(value/max*100) : 0;
+  return `<div class="barRow"><div class="name">${escapeHtml(name)}</div>`+
+         `<div class="track"><div class="fill" style="width:${pct}%;background:${color}"></div></div>`+
+         `<div class="num">${fmt(value)}</div></div>`;
+}
+function statRow(k,v){ return `<div class="stat"><b>${escapeHtml(k)}</b><span>${escapeHtml(v)}</span></div>`; }
+
+function renderInfoTab(){
+  const s = mapStats;
+  const degrees = Math.round((s.start.ang % 2048) / 2048 * 360);
+  let html = `<div class="section">Header</div>`;
+  html += statRow("Map version", "v"+s.version);
+  html += statRow("Start position", `${fmt(s.start.x)}, ${fmt(s.start.y)}, ${fmt(s.start.z)}`);
+  html += statRow("Start angle", `${s.start.ang} (${degrees}°)`);
+  html += statRow("Start sector", s.start.sector);
+
+  html += `<div class="section">Counts</div>`;
+  html += statRow("Sectors", fmt(s.sectors));
+  html += statRow("Walls", fmt(s.walls));
+  html += statRow("Sprites", fmt(s.sprites));
+  html += statRow("One-sided walls", fmt(s.oneSided));
+  html += statRow("Two-sided walls", fmt(s.twoSided));
+  html += statRow("Blocking walls", fmt(s.blocking));
+  html += statRow("Masked walls", fmt(s.masked));
+  html += statRow("Tagged sectors", fmt(s.sectorTags));
+  html += statRow("Tagged sprites", fmt(s.spriteTags));
+
+  html += `<div class="section">Dimensions</div>`;
+  html += statRow("Bounds (BUILD)", `${fmt(s.bounds.w)} × ${fmt(s.bounds.h)}`);
+  html += statRow("Bounds (metres)", `${(s.bounds.w/XY_SCALE).toFixed(1)} × ${(s.bounds.h/XY_SCALE).toFixed(1)} m`);
+  html += statRow("Total floor area", `${fmt(Math.round(s.floorAreaM2))} m²`);
+
+  html += `<div class="section">Sprites by category</div><div class="bars">`;
+  const maxCat = Math.max(1, ...Object.values(s.cats));
+  for(const k of Object.keys(CAT_META)){
+    if(!s.cats[k]) continue;
+    html += bar(CAT_META[k].label, CAT_META[k].color, s.cats[k], maxCat);
+  }
+  html += `</div>`;
+
+  html += `<div class="section">Most used wall textures</div><div class="bars">`;
+  const maxW = Math.max(1, ...s.wallPicsTop.map(x=>x[1]));
+  for(const [pic,n] of s.wallPicsTop) html += bar(tileName(pic)+" ("+pic+")", "#7db2ff", n, maxW);
+  html += `</div>`;
+
+  $("tab-info").innerHTML = html;
+}
+
+let allObjects = [];   // {sp, name, cat} flattened once for the Objects tab
+function renderObjectsTab(){
+  const s = mapStats;
+  let html = `<div class="section">Item breakdown</div><div class="bars">`;
+  const maxTop = Math.max(1, ...s.topPics.slice(0,14).map(x=>x.n));
+  for(const t of s.topPics.slice(0,14)){
+    const col = (CAT_META[t.cat]||CAT_META.decor).color;
+    html += bar(`${t.name} (${t.pic})`, col, t.n, maxTop);
+  }
+  html += `</div>`;
+  html += `<div class="section">All sprites (${fmt(mapData.sprites.length)})</div>`;
+  html += `<input id="search" placeholder="Filter by name, tile #, sector or tag…">`;
+  html += `<div class="list" id="objList"></div>`;
+  $("tab-objects").innerHTML = html;
+
+  allObjects = mapData.sprites.map((sp,i) => ({
+    i, sp, name:tileName(sp.picnum), cat:categoryOf(sp.picnum)
+  }));
+  $("search").addEventListener("input", e => fillObjList(e.target.value.trim().toLowerCase()));
+  fillObjList("");
+}
+function fillObjList(q){
+  const list = $("objList"); if(!list) return;
+  const rows = allObjects.filter(o => {
+    if(!q) return true;
+    return o.name.toLowerCase().includes(q) || String(o.sp.picnum)===q ||
+           ("sector "+o.sp.sectnum).includes(q) || String(o.sp.sectnum)===q ||
+           (o.sp.lotag && String(o.sp.lotag)===q) || o.cat.includes(q);
+  }).slice(0,400);   // cap for performance
+  if(!rows.length){ list.innerHTML = `<div class="empty">No matching objects.</div>`; return; }
+
+  list.innerHTML = rows.map(o => {
+    const col = (CAT_META[o.cat]||CAT_META.decor).color;
+    let sub = `#${o.sp.picnum} · ${spriteFlags(o.sp.cstat)}`;
+    if(o.sp.picnum===1 && SE_LOTAGS[o.sp.lotag]) sub += ` · SE ${o.sp.lotag}: ${SE_LOTAGS[o.sp.lotag]}`;
+    else if(o.sp.lotag||o.sp.hitag) sub += ` · lo ${o.sp.lotag} / hi ${o.sp.hitag}`;
+    sub += ` · sect ${o.sp.sectnum}`;
+    return `<div class="item"><div class="meta">`+
+      `<div class="title"><span class="dot" style="background:${col}"></span>${escapeHtml(o.name)}</div>`+
+      `<div class="sub">${escapeHtml(sub)}</div></div>`+
+      `<button class="go" data-obj="${o.i}">Go</button></div>`;
+  }).join("");
+
+  list.querySelectorAll("button[data-obj]").forEach(btn =>
+    btn.addEventListener("click", () => teleportToSprite(mapData.sprites[+btn.dataset.obj])));
+}
+
+function renderNavTab(){
+  let html = `<div class="section">Quick jump</div>`;
+  html += `<div class="btnRow"><button id="navStart">Player start</button>`+
+          `<button id="navToggleFly">Toggle fly</button>`+
+          `<button id="navToggleClip">Toggle noclip</button></div>`;
+  html += `<p class="hint" style="margin-top:8px">Noclip lets you pass through walls, floors and ceilings freely. The minimap (press M) is also clickable to teleport.</p>`;
+  html += `<div class="section">Sectors (${fmt(mapData.sectors.length)})</div>`;
+  html += `<input id="secSearch" placeholder="Filter by sector # or tag…">`;
+  html += `<div class="list" id="secList"></div>`;
+  $("tab-nav").innerHTML = html;
+
+  $("navStart").addEventListener("click", resetCamera);
+  $("navToggleFly").addEventListener("click", () => { cam.fly=!cam.fly; if(!cam.fly) cam.noclip=false; canvas.focus(); });
+  $("navToggleClip").addEventListener("click", () => { cam.noclip=!cam.noclip; if(cam.noclip) cam.fly=true; canvas.focus(); });
+  $("secSearch").addEventListener("input", e => fillSecList(e.target.value.trim().toLowerCase()));
+  fillSecList("");
+}
+function fillSecList(q){
+  const list = $("secList"); if(!list) return;
+  const rows = mapData.sectors.map((s,i)=>({s,i})).filter(({s,i}) => {
+    if(!q) return true;
+    return String(i)===q || (s.lotag && String(s.lotag)===q) || (s.hitag && String(s.hitag)===q);
+  }).slice(0,400);
+  if(!rows.length){ list.innerHTML = `<div class="empty">No matching sectors.</div>`; return; }
+
+  list.innerHTML = rows.map(({s,i}) => {
+    const fh=(zToY(s.floorz)).toFixed(1), ch=(zToY(s.ceilingz)).toFixed(1);
+    let sub = `floor ${fh}m · ceil ${ch}m · ${s.wallnum} walls`;
+    if(s.lotag||s.hitag) sub += ` · lo ${s.lotag} / hi ${s.hitag}`;
+    return `<div class="item"><div class="meta">`+
+      `<div class="title">Sector ${i}</div><div class="sub">${escapeHtml(sub)}</div></div>`+
+      `<button class="go" data-sec="${i}">Go</button></div>`;
+  }).join("");
+  list.querySelectorAll("button[data-sec]").forEach(btn =>
+    btn.addEventListener("click", () => teleportToSector(+btn.dataset.sec)));
+}
+
+function refreshPanels(){
+  mapStats = computeStats(mapData);
+  renderInfoTab();
+  renderObjectsTab();
+  renderNavTab();
+  setupMinimap();
+}
+
+/* ============================ 14. RENDER LOOP ============================ */
+function resizeCanvas(){
+  const maxDpr = parseFloat(resolutionSel.value||"1");
+  const dpr = Math.min(maxDpr, window.devicePixelRatio||1);
+  const w = Math.max(1, Math.floor(canvas.clientWidth*dpr));
+  const h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
+  if(canvas.width!==w || canvas.height!==h){ canvas.width=w; canvas.height=h; }
+}
+function drawGroup(g){
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, (g.tex&&g.tex.tex)?g.tex.tex:whiteTex.tex);
+  gl.uniform1f(program.uUseTex, optTextures.checked?1:0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,g.pos); gl.enableVertexAttribArray(program.aPos);   gl.vertexAttribPointer(program.aPos,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,g.uv);  gl.enableVertexAttribArray(program.aUv);    gl.vertexAttribPointer(program.aUv,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,g.col); gl.enableVertexAttribArray(program.aColor); gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,g.n);
+}
+
+// Billboard the face sprites toward the camera; fill preallocated buffers only.
+function drawBillboards(){
+  const right=[-Math.sin(cam.yaw),0,Math.cos(cam.yaw)];
+  const runs=[]; let vi=0;                                 // group consecutive same-texture verts
+  const pos=spriteBatch.fpos, uv=spriteBatch.fuv, col=spriteBatch.fcol;
+
+  const items=[];
+  for(const sp of billboards){
+    if(!optMarkers.checked && categoryOf(sp.picnum)==="marker") continue;
+    const sx=sp.x/XY_SCALE, sy=zToY(sp.z), sz=-sp.y/XY_SCALE;
+    const dx=sx-cam.x, dz=sz-cam.z, d2=dx*dx+dz*dz;
+    if(d2 > SPRITE_CULL2) continue;
+    const tex=getTexture(sp.picnum,true);
+    const w=Math.max(0.05,(tex.w||32)*Math.max(1,sp.xrepeat)/SPRITE_SCALE);
+    const h=Math.max(0.05,(tex.h||32)*Math.max(1,sp.yrepeat)/SPRITE_SCALE);
+    items.push({sp,sx,sy,sz,w,h,d2,tex});
+  }
+  items.sort((a,b)=>b.d2-a.d2);                            // back-to-front for alpha
+
+  let curTex=null, start=0, count=0;
+  const flushRun=()=>{ if(count) runs.push({tex:curTex,start,count}); };
+  for(const o of items){
+    if(o.tex!==curTex){ flushRun(); curTex=o.tex; start=vi; count=0; }
+    const half=o.w/2, bottom=o.sy, top=o.sy+o.h, c=shadeColor(o.sp.shade);
+    const v=[[o.sx-right[0]*half,bottom,o.sz-right[2]*half],
+             [o.sx+right[0]*half,bottom,o.sz+right[2]*half],
+             [o.sx+right[0]*half,top,   o.sz+right[2]*half],
+             [o.sx-right[0]*half,top,   o.sz-right[2]*half]];
+    const verts=[v[0],v[1],v[2],v[0],v[2],v[3]];
+    const uvs=[0,1,1,1,1,0,0,1,1,0,0,0];
+    for(let k=0;k<6;k++){ const p=verts[k];
+      pos[vi*3]=p[0]; pos[vi*3+1]=p[1]; pos[vi*3+2]=p[2];
+      uv[vi*2]=uvs[k*2]; uv[vi*2+1]=uvs[k*2+1];
+      col[vi*4]=c[0]; col[vi*4+1]=c[1]; col[vi*4+2]=c[2]; col[vi*4+3]=c[3];
+      vi++; count++;
+    }
+  }
+  flushRun();
+  if(!vi) return;
+
+  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.pos); gl.bufferData(gl.ARRAY_BUFFER,pos.subarray(0,vi*3),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(program.aPos); gl.vertexAttribPointer(program.aPos,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.uv);  gl.bufferData(gl.ARRAY_BUFFER,uv.subarray(0,vi*2),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(program.aUv); gl.vertexAttribPointer(program.aUv,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.col); gl.bufferData(gl.ARRAY_BUFFER,col.subarray(0,vi*4),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(program.aColor); gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
+
+  gl.uniform1f(program.uUseTex, optTextures.checked?1:0);
+  gl.activeTexture(gl.TEXTURE0);
+  for(const run of runs){
+    gl.bindTexture(gl.TEXTURE_2D, run.tex.tex||whiteTex.tex);
+    gl.drawArrays(gl.TRIANGLES, run.start, run.count);
+  }
+}
+
+let lastTime=performance.now(), fpsTime=performance.now(), fpsFrames=0, fps=0;
+function loop(now){
+  const dt = Math.min(0.05, (now-lastTime)/1000 || 0);
+  lastTime = now;
+  update(dt);
+  render();
+  drawMinimap();
+  fpsFrames++;
+  if(now-fpsTime > 500){ fps=Math.round(fpsFrames*1000/(now-fpsTime)); fpsFrames=0; fpsTime=now; }
+  requestAnimationFrame(loop);                           // single RAF loop
+}
+
+function render(){
+  resizeCanvas();
+  if(!gl) return;
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.clearColor(0.03,0.045,0.07,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+  if(!mapData){ hudEl.textContent = "No map loaded.\nFPS: "+fps; return; }
+
+  const aspect = Math.max(0.1, canvas.width/Math.max(1,canvas.height));
+  const proj = perspective(Math.PI/3, aspect, 0.04, MAX_DRAW_DIST);
+  const cp=Math.cos(cam.pitch);
+  const target=[cam.x+cp*Math.cos(cam.yaw), cam.y+Math.sin(cam.pitch), cam.z+cp*Math.sin(cam.yaw)];
+  const mvp = mul(proj, lookAt([cam.x,cam.y,cam.z], target, [0,1,0]));
+
+  gl.useProgram(program);
+  gl.uniformMatrix4fv(program.uMVP,false,mvp);
+  gl.uniform1i(program.uTex,0);
+
+  gl.disable(gl.BLEND);
+  for(const g of worldGroups) if(!g.alpha) drawGroup(g);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  for(const g of worldGroups) if(g.alpha) drawGroup(g);
+  if(optSprites.checked) drawBillboards();
+  gl.disable(gl.BLEND);
+
+  const mode = cam.noclip ? "noclip" : cam.fly ? "fly" : "walk";
+  const locked = document.pointerLockElement===canvas;
+  hudEl.innerHTML =
+    `<span class="k">FPS</span> ${fps}   <span class="k">Speed</span> ${moveSpeed.toFixed(1)} m/s<br>`+
+    `<span class="k">Mode</span> ${mode}${locked?"":"  (click to look)"}<br>`+
+    `<span class="k">Sector</span> ${cam.sector} / ${mapData.sectors.length}<br>`+
+    `<span class="k">Pos</span> ${cam.x.toFixed(1)}, ${cam.y.toFixed(1)}, ${cam.z.toFixed(1)}<br>`+
+    `<span class="k">Sprites</span> ${optSprites.checked?billboards.length:"off"}`;
+}
+
+/* ============================ UI EVENTS ============================ */
+document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".tabBody").forEach(b => b.classList.remove("active"));
+  tab.classList.add("active");
+  $("tab-"+tab.dataset.tab).classList.add("active");
+}));
+$("resetBtn").addEventListener("click", () => { resetCamera(); canvas.focus(); });
+
+$("loadBtn").addEventListener("click", async () => {
+  try{
+    initGL();
+    setLog("Loading…");
+    const mapFile = $("mapFile").files[0];
+    if(!mapFile) throw new Error("Choose a .MAP file first.");
+
+    const resFiles = [...$("resFiles").files];
+    fallbackTextures.clear();
+    if(resFiles.length) await loadResources(resFiles);
+    else { resources = resetResources(); log("No GRP/ART/PALETTE — using procedural colours.", "warn"); }
+
+    mapData = parseMap(await mapFile.arrayBuffer());
+    log(`MAP v${mapData.mapversion}: ${fmt(mapData.sectors.length)} sectors, `+
+        `${fmt(mapData.walls.length)} walls, ${fmt(mapData.sprites.length)} sprites.`, "ok");
+
+    buildWorld(mapData);
+    refreshPanels();
+    resetCamera();
+    log("Done. Open the Map info / Objects / Navigate tabs to explore.", "ok");
+    canvas.focus();
+  } catch(e){
+    log("ERROR: " + e.message, "bad");
+    console.error(e);
+  }
+});
+
+/* ============================ BOOTSTRAP ============================ */
+try{ initGL(); requestAnimationFrame(loop); }
+catch(e){ setLog("WebGL init failed: " + e.message); }
+})();
+</script>
+</body>
+</html>
