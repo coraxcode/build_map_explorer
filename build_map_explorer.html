@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BUILD / Mapster32 MAP Explorer</title>
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<title>BUILD / Mapster32 MAP Explorer — Audited Palette Build</title>
 <style>
 /* ---------- Design tokens: a dark "editor console" grounded in BUILD 2D mode ---------- */
 :root{
@@ -23,7 +25,14 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--void);color:var(--ink);font-family:var(--sans)}
-#gl{position:fixed;inset:0;width:100vw;height:100vh;display:block;background:#05070b;outline:none;cursor:crosshair}
+#gl,#map2d{position:fixed;inset:0;width:100vw;height:100vh;display:block;outline:none}
+#gl{background:#05070b;cursor:crosshair}
+#map2d{background:#06080d;cursor:grab;touch-action:none}
+#map2d.dragging{cursor:grabbing}
+#viewTools{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:18;display:flex;gap:7px;align-items:center;
+  background:rgba(8,11,17,.91);border:1px solid var(--edge);border-radius:11px;padding:6px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+#viewTools button{padding:7px 10px}
+#viewLabel{font:700 10px/1 var(--mono);letter-spacing:.8px;color:var(--cyan);padding:0 5px;white-space:nowrap}
 
 /* ---------- Left panel with tabs ---------- */
 #panel{position:fixed;left:14px;top:14px;z-index:20;width:min(430px,calc(100vw - 28px));
@@ -81,6 +90,14 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 .item .go{padding:5px 9px;font-size:11px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
 .empty{color:var(--muted);font-size:12px;padding:12px 0;text-align:center}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}
+.pager span{font:11px var(--mono);color:var(--muted)}
+.detailBox{margin-top:9px;background:#080b12;border:1px solid var(--edge);border-radius:9px;padding:9px}
+.detailBox .detailTitle{font-size:12px;font-weight:700;color:var(--cyan);margin-bottom:7px}
+.detailBox pre{margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#c9d5e8;font:10.5px/1.45 var(--mono)}
+.item.selected{border-color:var(--amber);box-shadow:0 0 0 1px rgba(240,180,41,.18) inset}
+.issue{padding:6px 8px;margin:5px 0;border-left:3px solid var(--amber);background:#101521;border-radius:5px;font-size:11px;line-height:1.4}
+.issue.bad{border-left-color:var(--red);color:#ffd1d1}
 
 /* ---------- Minimap (signature element: BUILD 2D blueprint) ---------- */
 #miniWrap{position:fixed;right:14px;top:14px;z-index:14;background:rgba(8,11,17,.92);
@@ -109,20 +126,27 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 </head>
 <body>
 <canvas id="gl" tabindex="0"></canvas>
+<canvas id="map2d" class="hidden" tabindex="0" aria-label="Textured top-down map view"></canvas>
 <div id="cross"></div>
+<div id="viewTools">
+  <span id="viewLabel">3D VIEW</span>
+  <button id="viewModeBtn" class="primary">Switch to 2D</button>
+  <button id="fit2dBtn" class="hidden">Fit map</button>
+</div>
 
 <!-- ===================== Left control / inspector panel ===================== -->
 <div id="panel">
   <div id="panelHead">
     <h1><span>BUILD</span> / Mapster32 MAP Explorer</h1>
-    <p>Lightweight WebGL viewer for Duke Nukem 3D <b>.MAP</b> files. Optionally load <b>DUKE3D.GRP</b> or <b>TILES###.ART + PALETTE.DAT</b> for real textures.</p>
+    <p>Lightweight WebGL viewer for Duke Nukem 3D <b>.MAP</b> files. Optionally load <b>DUKE3D.GRP</b> or matching <b>ART + PALETTE.DAT + LOOKUP.DAT</b> resources for BUILD-accurate textures, shades and palette swaps.</p>
   </div>
 
   <div id="tabs">
     <button class="tab active" data-tab="load">Load</button>
     <button class="tab" data-tab="info">Map info</button>
     <button class="tab" data-tab="objects">Objects</button>
-    <button class="tab" data-tab="nav">Navigate</button>
+    <button class="tab" data-tab="nav">Sectors</button>
+    <button class="tab" data-tab="walls">Walls</button>
   </div>
 
   <!-- ---- Load tab ---- -->
@@ -134,14 +158,16 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
     <div class="field">
       <label class="h">2) Optional resources</label>
       <input id="resFiles" type="file" multiple accept=".grp,.GRP,.art,.ART,.dat,.DAT">
-      <p class="hint">Without GRP/ART/PALETTE the map opens with fast procedural colours.</p>
+      <p class="hint">For the closest in-game result, load the exact GRP/ART, PALETTE.DAT and LOOKUP.DAT used by the map or mod.</p>
     </div>
     <div class="opts">
       <label class="opt"><input id="optTextures" type="checkbox" checked> Textures</label>
       <label class="opt"><input id="optSprites" type="checkbox" checked> Sprites</label>
       <label class="opt"><input id="optCollision" type="checkbox" checked> Collision</label>
       <label class="opt"><input id="optMarkers" type="checkbox"> Editor markers</label>
+      <label class="opt"><input id="optMapPalette" type="checkbox" checked> Map palette & lighting</label>
     </div>
+    <p class="hint" id="paletteModeHint">Enabled: use the map's configured palette swaps and darkness. Disable for the default palette at full brightness while inspecting dark areas.</p>
     <div class="field">
       <label class="h">Internal resolution</label>
       <select id="resolution">
@@ -153,6 +179,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
     <div class="btnRow">
       <button id="loadBtn" class="primary">Load map</button>
       <button id="resetBtn">Reset camera</button>
+      <button id="exportJsonBtn" disabled>Export full JSON</button>
     </div>
     <div id="log">Ready. Choose a .MAP file and press “Load map”.</div>
   </div>
@@ -164,7 +191,8 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
   <div class="tabBody" id="tab-objects"><div class="empty">Load a map to browse its objects.</div></div>
 
   <!-- ---- Navigate tab ---- -->
-  <div class="tabBody" id="tab-nav"><div class="empty">Load a map to jump between sectors.</div></div>
+  <div class="tabBody" id="tab-nav"><div class="empty">Load a map to inspect sectors.</div></div>
+  <div class="tabBody" id="tab-walls"><div class="empty">Load a map to inspect walls.</div></div>
 </div>
 
 <!-- ===================== Minimap (top-down blueprint) ===================== -->
@@ -184,6 +212,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
   <span class="key">N</span> noclip (through walls) ·
   <span class="key">Space/Ctrl</span> up/down ·
   <span class="key">R</span> reset ·
+  <span class="key">V</span> 2D/3D view ·
   <span class="key">M</span> minimap ·
   <span class="key">Tab</span> panel ·
   <span class="key">Esc</span> release
@@ -194,7 +223,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 "use strict";
 
 /* ============================================================================
-   BUILD / Mapster32 MAP Explorer — single-file WebGL viewer.
+   BUILD / Mapster32 MAP Explorer — audited material and palette build.
 
    This is a static viewer (not EDuke32 in a browser). It parses the classic
    BUILD .MAP format (v7/v8/v9), reconstructs sector/wall/sprite geometry, and
@@ -225,10 +254,26 @@ const WALK_SPEED    = 4.2;      // Metres/second walking.
 const RUN_MULT      = 1.9;      // Run multiplier.
 const MAX_DRAW_DIST = 1400;     // Far clip in metres.
 const SPRITE_CULL2  = 200 * 200;// Squared metre distance to skip billboards.
+const MAX_MAP_BYTES   = 64 * 1024 * 1024;
+const MAX_RESOURCE_BYTES = 256 * 1024 * 1024;
+const MAX_TILE_PIXELS = 4 * 1024 * 1024;
+const MAX_TEXTURE_PIXELS_TOTAL = 32 * 1024 * 1024;
+const LIST_PAGE_SIZE  = 80;
+const MAX_2D_TEXTURED_SECTORS = 1200;
+const MAX_2D_TEXTURED_SPRITES = 500;
+const MAX_GEOMETRY_VERTICES = 1000000;
+const MAX_MATERIAL_GROUPS = 4096;
+const MAX_2D_TILE_CACHE = 512;
+const MAX_TRIANGULATION_POINT_TESTS = 2000000;
 
 /* ============================ 2. DOM REFS ============================ */
 const $ = id => document.getElementById(id);
 const canvas   = $("gl");
+const map2dCv  = $("map2d");
+const viewModeBtn = $("viewModeBtn");
+const fit2dBtn = $("fit2dBtn");
+const viewLabel = $("viewLabel");
+const crossEl  = $("cross");
 const miniWrap = $("miniWrap");
 const miniCv   = $("mini");
 const hudEl    = $("hud");
@@ -238,6 +283,8 @@ const optTextures  = $("optTextures");
 const optSprites   = $("optSprites");
 const optCollision = $("optCollision");
 const optMarkers   = $("optMarkers");
+const optMapPalette= $("optMapPalette");
+const paletteModeHint = $("paletteModeHint");
 const resolutionSel= $("resolution");
 
 /* ============================ 3. HELPERS ============================ */
@@ -247,13 +294,17 @@ function escapeHtml(s){
   ));
 }
 function setLog(msg){ logEl.textContent = msg; }
-function log(msg, cls){
-  const safe = escapeHtml(msg);
-  logEl.innerHTML += "\n" + (cls ? `<span class="${cls}">${safe}</span>` : safe);
-  logEl.scrollTop = logEl.scrollHeight;
+function log(msg,cls){
+  logEl.appendChild(document.createTextNode("\n"));
+  if(cls){const span=document.createElement("span");span.className=cls;span.textContent=String(msg);logEl.appendChild(span);}
+  else logEl.appendChild(document.createTextNode(String(msg)));
+  logEl.scrollTop=logEl.scrollHeight;
 }
 const fmt = n => n.toLocaleString("en-US");             // thousands separators
 const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const finite = (...v) => v.every(Number.isFinite);
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+function debounce(fn, delay=120){ let t=0; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args),delay); }; }
 
 /* ============================ 4. BINARY READER ============================ */
 // Little-endian cursor reader with bounds checks for safety on malformed files.
@@ -327,8 +378,10 @@ function parseMap(buffer){
     });
   }
 
-  const md = { mapversion, posx, posy, posz, ang, cursectnum, sectors, walls, sprites };
+  const md = { mapversion, posx, posy, posz, ang, cursectnum, sectors, walls, sprites,
+    sourceBytes:buffer.byteLength, parsedBytes:r.o, trailingBytes:Math.max(0,buffer.byteLength-r.o) };
   buildSectorInfo(md);
+  md.validation = validateMap(md);
   return md;
 }
 
@@ -346,16 +399,16 @@ function buildSectorInfo(md){
     while(unvisited.size){
       const first = unvisited.values().next().value;
       const loop = [];
-      let wi = first, guard = 0;
+      let wi = first, guard = 0, closed = false;
       while(unvisited.has(wi) && guard++ < s.wallnum + 4){
         unvisited.delete(wi);
         loop.push(wi);
         const next = md.walls[wi].point2;
-        if(next === first) break;
+        if(next === first){ closed = true; break; }
         if(next < start || next >= end) break;
         wi = next;
       }
-      if(loop.length >= 3) loops.push(loop);
+      if(closed && loop.length >= 3) loops.push(loop);
     }
     s.loops = loops;
 
@@ -367,7 +420,12 @@ function buildSectorInfo(md){
       if(a > bestArea){ bestArea = a; best = loop; }
     }
     s.outerLoop = best || loops[0] || [];
-    s.area = bestArea > 0 ? bestArea : 0;
+    let holesArea = 0;
+    for(const loop of loops){
+      if(loop===s.outerLoop) continue;
+      holesArea += Math.abs(polyArea(loop.map(i => ({x:md.walls[i].x,y:md.walls[i].y}))));
+    }
+    s.area = Math.max(0,(bestArea > 0 ? bestArea : 0)-holesArea);
 
     let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity,cx=0,cy=0;
     for(const wi of s.outerLoop){
@@ -376,7 +434,7 @@ function buildSectorInfo(md){
       miny=Math.min(miny,w.y); maxy=Math.max(maxy,w.y);
       cx+=w.x; cy+=w.y;
     }
-    s.bbox = {minx,miny,maxx,maxy};
+    s.bbox = s.outerLoop.length ? {minx,miny,maxx,maxy} : null;
     s.centroid = s.outerLoop.length ? {x:cx/s.outerLoop.length, y:cy/s.outerLoop.length} : {x:0,y:0};
 
     const nset = new Set();
@@ -386,6 +444,96 @@ function buildSectorInfo(md){
     }
     s.neighbors = [...nset];
   }
+}
+
+
+function validateMap(md){
+  const issues=[]; let errors=0,warnings=0;
+  const add=(severity,kind,index,message)=>{ issues.push({severity,kind,index,message}); severity==="error"?errors++:warnings++; };
+  for(let si=0;si<md.sectors.length;si++){
+    const s=md.sectors[si], end=s.wallptr+s.wallnum;
+    if(s.wallptr<0 || s.wallnum<3 || end>md.walls.length) add("error","sector",si,"Invalid wall range.");
+    if(!s.loops.length) add("error","sector",si,"No valid closed wall loop was reconstructed.");
+    if(s.ceilingz>s.floorz) add("warning","sector",si,"Ceiling Z is below floor Z in BUILD coordinates.");
+  }
+  const wallOwner=new Int32Array(md.walls.length); wallOwner.fill(-1);
+  for(let si=0;si<md.sectors.length;si++) for(let wi=md.sectors[si].wallptr;wi<md.sectors[si].wallptr+md.sectors[si].wallnum;wi++) if(wi>=0&&wi<wallOwner.length) wallOwner[wi]=si;
+  md.wallOwners=Array.from(wallOwner);
+  for(let wi=0;wi<md.walls.length;wi++){
+    const w=md.walls[wi];
+    if(w.point2<0 || w.point2>=md.walls.length) add("error","wall",wi,"point2 is outside the wall array.");
+    else if(wallOwner[wi]!==wallOwner[w.point2]) add("warning","wall",wi,"point2 points outside its owning sector.");
+    if(w.nextwall>=0 || w.nextsector>=0){
+      if(w.nextwall<0 || w.nextwall>=md.walls.length || w.nextsector<0 || w.nextsector>=md.sectors.length) add("error","wall",wi,"Invalid red-wall link.");
+      else {
+        const peer=md.walls[w.nextwall];
+        if(peer.nextwall!==wi) add("warning","wall",wi,"nextwall backlink does not return to this wall.");
+        if(wallOwner[w.nextwall]!==w.nextsector) add("warning","wall",wi,"nextsector does not own nextwall.");
+      }
+    }
+    if(w.point2>=0 && w.point2<md.walls.length){ const p=md.walls[w.point2]; if(p.x===w.x && p.y===w.y) add("warning","wall",wi,"Zero-length wall."); }
+    if(w.xrepeat===0 || w.yrepeat===0) add("warning","wall",wi,"Texture repeat is zero.");
+  }
+  for(let i=0;i<md.sprites.length;i++){
+    const sp=md.sprites[i];
+    if(sp.sectnum<0 || sp.sectnum>=md.sectors.length) add("error","sprite",i,"Invalid sector reference.");
+    if(!finite(sp.x,sp.y,sp.z)) add("error","sprite",i,"Non-finite position.");
+    if(sp.xrepeat===0 || sp.yrepeat===0) add("warning","sprite",i,"Sprite repeat is zero; it may be invisible.");
+  }
+  if(md.trailingBytes) add("warning","header",-1,`${md.trailingBytes} trailing byte(s) remain after the classic MAP records; this may be extension data.`);
+  return {errors,warnings,issues};
+}
+
+function planeZAt(md,sec,isCeiling,x,y){
+  const stat=isCeiling?sec.ceilingstat:sec.floorstat;
+  const base=isCeiling?sec.ceilingz:sec.floorz;
+  const heinum=isCeiling?sec.ceilingheinum:sec.floorheinum;
+  if(!(stat&2) || !heinum || sec.wallptr<0 || sec.wallptr>=md.walls.length) return base;
+  const w0=md.walls[sec.wallptr], w1=md.walls[w0.point2];
+  if(!w1) return base;
+  const dx=w1.x-w0.x, dy=w1.y-w0.y, len=Math.hypot(dx,dy);
+  if(len<1e-9) return base;
+  const cross=dx*(y-w0.y)-dy*(x-w0.x);
+  return base + heinum*cross/(256*len);
+}
+function tileSize(pic){
+  const t=resources.tiles.get(Math.max(0,pic|0));
+  return t&&t.w>0&&t.h>0 ? {w:t.w,h:t.h} : {w:64,h:64};
+}
+function nextPowerOfTwo(v){ let n=1; while(n<v&&n<8192)n<<=1; return n; }
+function signedByte(v){ v&=255; return v>127?v-256:v; }
+function tileOffsets(pic){
+  const t=resources.tiles.get(Math.max(0,pic|0)),a=t?t.picanm|0:0;
+  return {x:signedByte(a>>>8),y:signedByte(a>>>16)};
+}
+// BUILD floor/ceiling mapping: one ART texel normally spans 16 BUILD units.
+// Panning is expressed in texels; swap/flips act on the mapping axes, and
+// relative alignment uses the first wall as the local coordinate frame.
+function surfaceUV(md,sec,isCeiling,pic,x,y){
+  const stat=isCeiling?sec.ceilingstat:sec.floorstat;
+  const xp=isCeiling?sec.ceilingxpanning:sec.floorxpanning;
+  const yp=isCeiling?sec.ceilingypanning:sec.floorypanning;
+  const size=tileSize(pic), worldPerTexel=(stat&8)?32:16;
+  let tx=x,ty=y;
+  if((stat&64) && sec.wallptr>=0 && sec.wallptr<md.walls.length){
+    const w0=md.walls[sec.wallptr],w1=md.walls[w0.point2];
+    if(w1){
+      const dx=w1.x-w0.x,dy=w1.y-w0.y,len=Math.hypot(dx,dy);
+      if(len>1e-9){
+        const rx=x-w0.x,ry=y-w0.y;
+        tx=(rx*dx+ry*dy)/len;
+        ty=(rx*(-dy)+ry*dx)/len;
+        const heinum=isCeiling?sec.ceilingheinum:sec.floorheinum;
+        if((stat&2)&&heinum) ty*=Math.hypot(4096,heinum)/4096;
+      }
+    }
+  }
+  let px=tx/worldPerTexel,py=ty/worldPerTexel;
+  if(stat&4){const t=px;px=py;py=t;}
+  if(stat&16)px=-px;
+  if(stat&32)py=-py;
+  px+=xp;py+=yp;
+  return [px/Math.max(1,size.w),py/Math.max(1,size.h)];
 }
 
 /* --- Duke3D tile names & categories (from the Duke4 InfoSuite reference). --- */
@@ -483,6 +631,20 @@ function spriteFlags(cstat){
   if(cstat & 32768) f.push("invisible");
   return f.join(", ");
 }
+function wallFlags(cstat){
+  const f=[];
+  if(cstat&1)f.push("blocking"); if(cstat&2)f.push("bottom-swap"); if(cstat&4)f.push("bottom-align");
+  if(cstat&8)f.push("x-flip"); if(cstat&16)f.push("masked"); if(cstat&32)f.push("one-way");
+  if(cstat&64)f.push("hitscan-blocking"); if(cstat&128)f.push("translucent"); if(cstat&256)f.push("y-flip");
+  if(cstat&512)f.push("reverse-translucence");
+  return f.join(", ")||"none";
+}
+function sectorSurfaceFlags(stat){
+  const f=[];
+  if(stat&1)f.push("parallax"); if(stat&2)f.push("sloped"); if(stat&4)f.push("swap-xy"); if(stat&8)f.push("double-smooshiness");
+  if(stat&16)f.push("x-flip"); if(stat&32)f.push("y-flip"); if(stat&64)f.push("relative-alignment");
+  return f.join(", ")||"none";
+}
 
 // Compute everything the Info/Objects/Navigate panels display.
 function computeStats(md){
@@ -510,7 +672,15 @@ function computeStats(md){
   let floorArea=0; for(const s of md.sectors) floorArea += s.area;
 
   const sectorTags = md.sectors.filter(s => s.lotag||s.hitag).length;
+  const wallTags = md.walls.filter(w => w.lotag||w.hitag).length;
   const spriteTags = md.sprites.filter(s => s.lotag||s.hitag).length;
+  const floorTiles=new Set(md.sectors.map(s=>s.floorpicnum));
+  const ceilingTiles=new Set(md.sectors.map(s=>s.ceilingpicnum));
+  const wallTiles=new Set(md.walls.map(w=>w.picnum));
+  const overTiles=new Set(md.walls.filter(w=>w.overpicnum>=0).map(w=>w.overpicnum));
+  const spriteTiles=new Set(md.sprites.map(sp=>sp.picnum));
+  const slopedFloors=md.sectors.filter(s=>s.floorstat&2).length;
+  const slopedCeilings=md.sectors.filter(s=>s.ceilingstat&2).length;
 
   // Sprite picnum histogram (top entries), with names.
   const topPics = [...picCount.entries()]
@@ -523,17 +693,35 @@ function computeStats(md){
     cats, topPics, oneSided, twoSided, blocking, masked,
     bounds:{minx,miny,maxx,maxy,w:maxx-minx,h:maxy-miny},
     floorAreaM2:floorArea/(XY_SCALE*XY_SCALE),
-    sectorTags, spriteTags,
+    sectorTags, wallTags, spriteTags, slopedFloors, slopedCeilings,
+    uniqueTiles:{floor:floorTiles.size,ceiling:ceilingTiles.size,wall:wallTiles.size,over:overTiles.size,sprite:spriteTiles.size,
+      all:new Set([...floorTiles,...ceilingTiles,...wallTiles,...overTiles,...spriteTiles]).size},
+    validation:md.validation, parsedBytes:md.parsedBytes, sourceBytes:md.sourceBytes, trailingBytes:md.trailingBytes,
     wallPicsTop:[...wallPics.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8)
   };
 }
 
 /* ============================ 6. RESOURCES (GRP / ART / PALETTE) ============================ */
 let resources = resetResources();
-function resetResources(){ return { palette:null, tiles:new Map(), textures:new Map(), files:new Map() }; }
+function resetResources(){ return {palette:null,numShades:0,shadeTable:null,lookups:new Map(),tiles:new Map(),textures:new Map(),files:new Map(),texturePixels:0,textureBudgetWarned:false}; }
+function clearMaterialTextureCaches(){
+  if(gl&&resources&&resources.textures) for(const t of resources.textures.values()) if(t&&t.tex) gl.deleteTexture(t.tex);
+  if(resources&&resources.textures) resources.textures.clear();
+  if(resources){ resources.texturePixels=0; resources.textureBudgetWarned=false; }
+  if(gl) for(const t of fallbackTextures.values()) if(t&&t.tex) gl.deleteTexture(t.tex);
+  fallbackTextures.clear();
+  reset2DTextureCache();
+}
+function disposeResources(){
+  clearMaterialTextureCaches();
+}
 
 async function loadResources(files){
+  disposeResources();
   resources = resetResources();
+  reset2DTextureCache();
+  const total=files.reduce((n,f)=>n+(f.size||0),0);
+  if(total>MAX_RESOURCE_BYTES) throw new Error(`Selected resource files total ${(total/1048576).toFixed(1)} MB; safety limit is ${MAX_RESOURCE_BYTES/1048576} MB.`);
   for(const file of files){
     const name = file.name.toUpperCase();
     const buf = await file.arrayBuffer();
@@ -541,9 +729,13 @@ async function loadResources(files){
     else resources.files.set(name, buf);
   }
   if(resources.files.has("PALETTE.DAT")){
-    try { parsePalette(resources.files.get("PALETTE.DAT")); log("PALETTE.DAT loaded.", "ok"); }
+    try { parsePalette(resources.files.get("PALETTE.DAT")); log(`PALETTE.DAT loaded (${resources.numShades||0} shade table(s)).`, "ok"); }
     catch(e){ log("PALETTE.DAT error: " + e.message, "bad"); }
   } else log("No PALETTE.DAT — using a synthetic palette.", "warn");
+  if(resources.files.has("LOOKUP.DAT")){
+    try { parseLookup(resources.files.get("LOOKUP.DAT")); log(`LOOKUP.DAT loaded (${resources.lookups.size} palette lookup(s)).`, "ok"); }
+    catch(e){ log("LOOKUP.DAT error: " + e.message, "bad"); }
+  }
 
   let count = 0;
   for(const name of [...resources.files.keys()].filter(n => n.endsWith(".ART")).sort()){
@@ -559,26 +751,67 @@ function parseGrp(buffer, out){
   const count = r.u32();
   if(count < 1 || count > 20000) throw new Error("Invalid GRP entry count: " + count);
   const headers = [];
-  for(let i=0;i<count;i++) headers.push({ name:r.str(12).toUpperCase(), size:r.u32() });
-  let off = 16 + count * 16;
+  for(let i=0;i<count;i++){const name=r.str(12).toUpperCase();if(!name)throw new Error("GRP contains an empty entry name.");headers.push({name,size:r.u32()});}
+  let off=16+count*16;
   for(const h of headers){
-    if(off + h.size <= buffer.byteLength) out.set(h.name, buffer.slice(off, off + h.size));
-    off += h.size;
+    if(h.size>MAX_RESOURCE_BYTES)throw new Error("GRP entry exceeds the safety limit: "+h.name);
+    if(off+h.size>buffer.byteLength)throw new Error("Truncated GRP entry: "+h.name);
+    out.set(h.name,buffer.slice(off,off+h.size));off+=h.size;
   }
+  if(off!==buffer.byteLength)log(`GRP has ${buffer.byteLength-off} trailing byte(s).`,"warn");
   log("GRP contains " + out.size + " internal file(s).");
 }
 
 function parsePalette(buffer){
-  const u = new Uint8Array(buffer);
-  if(u.length < 768) throw new Error("PALETTE.DAT smaller than 768 bytes.");
-  const pal = new Uint8Array(256*4);
-  for(let i=0;i<256;i++){                 // VGA 6-bit channels -> 8-bit.
-    pal[i*4+0]=Math.min(255,u[i*3+0]*4);
-    pal[i*4+1]=Math.min(255,u[i*3+1]*4);
-    pal[i*4+2]=Math.min(255,u[i*3+2]*4);
-    pal[i*4+3]=255;
+  const u=new Uint8Array(buffer);
+  if(u.length<768)throw new Error("PALETTE.DAT smaller than 768 bytes.");
+  const pal=new Uint8Array(256*4);
+  for(let i=0;i<256;i++){
+    pal[i*4]=Math.min(255,u[i*3]*4);pal[i*4+1]=Math.min(255,u[i*3+1]*4);
+    pal[i*4+2]=Math.min(255,u[i*3+2]*4);pal[i*4+3]=255;
   }
-  resources.palette = pal;
+  resources.palette=pal;resources.numShades=0;resources.shadeTable=null;
+  // New BUILD format: palette[768], uint16 numshades, then numshades*256.
+  if(u.length>=770){
+    const n=u[768]|(u[769]<<8);
+    if(n>0&&n<=256&&770+n*256<=u.length){
+      resources.numShades=n;resources.shadeTable=u.slice(770,770+n*256);return;
+    }
+  }
+  // Older BUILD palette files omitted the uint16 count and ended in 32640 bytes.
+  const old=(u.length-768-32640)/256;
+  if(Number.isInteger(old)&&old>0&&old<=256){resources.numShades=old;resources.shadeTable=u.slice(768,768+old*256);}
+}
+function parseLookup(buffer){
+  const u=new Uint8Array(buffer);if(!u.length)throw new Error("LOOKUP.DAT is empty.");
+  const count=u[0];if(count>64)throw new Error("Unreasonable LOOKUP.DAT table count: "+count);
+  let off=1;resources.lookups.clear();
+  for(let i=0;i<count;i++){
+    if(off+257>u.length)throw new Error("LOOKUP.DAT is truncated at table "+i);
+    const pal=u[off++];resources.lookups.set(pal,u.slice(off,off+256));off+=256;
+  }
+}
+function mappedPaletteIndex(index,pal,shade){
+  index&=255;const remap=resources.lookups.get(pal|0);if(remap)index=remap[index];
+  if(resources.shadeTable&&resources.numShades){
+    const row=clamp(shade|0,0,resources.numShades-1);
+    index=resources.shadeTable[row*256+index];
+  }
+  return index;
+}
+function displayMaterial(pal,shade){
+  return optMapPalette&&optMapPalette.checked ? {pal:pal|0,shade:shade|0} : {pal:0,shade:0};
+}
+function getDisplayTexture(pic,pal=0,shade=0,alpha=false){
+  const m=displayMaterial(pal,shade);
+  return getTexture(pic,m.pal,m.shade,alpha);
+}
+function updatePaletteModeUi(writeLog=false){
+  const accurate=!!(optMapPalette&&optMapPalette.checked);
+  if(paletteModeHint) paletteModeHint.textContent=accurate
+    ? "Enabled: use the map's configured palette swaps and darkness. Disable for the default palette at full brightness while inspecting dark areas."
+    : "Inspection mode: default palette and full brightness are active. Map geometry, textures and alignment are unchanged.";
+  if(writeLog) log(accurate?"Map palette and lighting enabled.":"Default-palette full-bright inspection enabled.","info");
 }
 
 function parseArt(buffer, name){
@@ -594,7 +827,7 @@ function parseArt(buffer, name){
   for(let i=0;i<count;i++) anm.push(r.i32());
   for(let i=0;i<count;i++){
     const w=xs[i], h=ys[i], tile=start+i;
-    if(w<0 || h<0 || w*h > 4096*4096) throw new Error("Invalid tile " + tile);
+    if(w<0 || h<0 || w>4096 || h>4096 || w*h > MAX_TILE_PIXELS) throw new Error("Tile " + tile + " exceeds the safe browser texture limit.");
     const data = (w && h) ? r.bytes(w*h) : new Uint8Array(0);
     resources.tiles.set(tile, {w,h,picanm:anm[i],data});
   }
@@ -610,10 +843,11 @@ uniform mat4 uMVP; varying vec2 vUv; varying vec4 vColor;
 void main(){ gl_Position = uMVP * vec4(aPos,1.0); vUv = aUv; vColor = aColor; }`;
 const FS = `
 precision mediump float;
-uniform sampler2D uTex; uniform float uUseTex;
+uniform sampler2D uTex; uniform float uUseTex; uniform float uWrap;
 varying vec2 vUv; varying vec4 vColor;
 void main(){
-  vec4 t = texture2D(uTex, vUv);
+  vec2 uv = uWrap > 0.5 ? fract(vUv) : clamp(vUv, vec2(0.0), vec2(1.0));
+  vec4 t = texture2D(uTex, uv);
   if(uUseTex < 0.5) t = vec4(1.0);
   vec4 c = t * vColor;
   if(c.a < 0.08) discard;
@@ -643,7 +877,7 @@ function createProgram(vs, fs){
   gl.linkProgram(p);
   if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
   p.aPos=gl.getAttribLocation(p,"aPos"); p.aUv=gl.getAttribLocation(p,"aUv"); p.aColor=gl.getAttribLocation(p,"aColor");
-  p.uMVP=gl.getUniformLocation(p,"uMVP"); p.uTex=gl.getUniformLocation(p,"uTex"); p.uUseTex=gl.getUniformLocation(p,"uUseTex");
+  p.uMVP=gl.getUniformLocation(p,"uMVP");p.uTex=gl.getUniformLocation(p,"uTex");p.uUseTex=gl.getUniformLocation(p,"uUseTex");p.uWrap=gl.getUniformLocation(p,"uWrap");
   return p;
 }
 function solidTexture(rgba){
@@ -657,43 +891,47 @@ function makeBuffer(data, usage){ const b=gl.createBuffer(); gl.bindBuffer(gl.AR
 const isPOT = v => v>0 && (v & (v-1))===0;
 
 /* ============================ 7. TEXTURES ============================ */
-function getTexture(pic, alpha){
-  pic = Math.max(0, pic|0);
-  const key = pic + ":" + (alpha?1:0);
-  if(resources.textures.has(key)) return resources.textures.get(key);
-
-  const tile = resources.tiles.get(pic);
-  if(tile && tile.w>0 && tile.h>0){
-    const pal = resources.palette || synthPalette();
-    const rgba = new Uint8Array(tile.w*tile.h*4);
-    for(let x=0;x<tile.w;x++)                       // ART data is column-major
-      for(let y=0;y<tile.h;y++){
-        const idx = tile.data[x*tile.h+y] || 0;
-        const di = (y*tile.w+x)*4;
-        rgba[di]=pal[idx*4]; rgba[di+1]=pal[idx*4+1]; rgba[di+2]=pal[idx*4+2];
-        rgba[di+3] = (alpha && idx===255) ? 0 : 255; // palette 255 == transparent
-      }
-    const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+function getTexture(pic,pal=0,shade=0,alpha=false){
+  pic=Math.max(0,pic|0);pal=pal|0;shade=shade|0;
+  const key=`${pic}:${pal}:${shade}:${alpha?1:0}`;
+  if(resources.textures.has(key))return resources.textures.get(key);
+  const tile=resources.tiles.get(pic);
+  if(tile&&tile.w>0&&tile.h>0){
+    const deviceMax=gl&&gl.getParameter?Math.max(1,gl.getParameter(gl.MAX_TEXTURE_SIZE)||4096):4096;
+    if(tile.w>deviceMax||tile.h>deviceMax){
+      if(fallbackTextures.has(key))return fallbackTextures.get(key);
+      const safe=fallbackTexture(pic,pal,shade);fallbackTextures.set(key,safe);return safe;
+    }
+    const pixels=tile.w*tile.h;
+    if(resources.texturePixels+pixels>MAX_TEXTURE_PIXELS_TOTAL){
+      if(!resources.textureBudgetWarned){resources.textureBudgetWarned=true;log("Texture memory safety limit reached; remaining material variants use procedural previews.","warn");}
+      if(fallbackTextures.has(key))return fallbackTextures.get(key);
+      const safe=fallbackTexture(pic,pal,shade);fallbackTextures.set(key,safe);return safe;
+    }
+    const basePal=resources.palette||synthPalette(),rgba=new Uint8Array(pixels*4);
+    const fallbackFactor=resources.shadeTable?1:clamp(1-Math.max(0,shade)/32,.12,1);
+    for(let x=0;x<tile.w;x++)for(let y=0;y<tile.h;y++){
+      const raw=tile.data[x*tile.h+y]||0,idx=mappedPaletteIndex(raw,pal,shade),di=(y*tile.w+x)*4;
+      rgba[di]=basePal[idx*4]*fallbackFactor;rgba[di+1]=basePal[idx*4+1]*fallbackFactor;rgba[di+2]=basePal[idx*4+2]*fallbackFactor;
+      rgba[di+3]=(alpha&&raw===255)?0:255;
+    }
+    const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
     gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,tile.w,tile.h,0,gl.RGBA,gl.UNSIGNED_BYTE,rgba);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-    const wrap = (isPOT(tile.w)&&isPOT(tile.h)) ? gl.REPEAT : gl.CLAMP_TO_EDGE;
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,wrap);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,wrap);
-    const obj={tex,w:tile.w,h:tile.h,real:true};
-    resources.textures.set(key,obj); return obj;
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const obj={tex,w:tile.w,h:tile.h,real:true,pic,pal,shade};resources.texturePixels+=pixels;resources.textures.set(key,obj);return obj;
   }
-  if(fallbackTextures.has(key)) return fallbackTextures.get(key);
-  const obj = fallbackTexture(pic); fallbackTextures.set(key,obj); return obj;
+  if(fallbackTextures.has(key))return fallbackTextures.get(key);
+  const obj=fallbackTexture(pic,pal,shade);fallbackTextures.set(key,obj);return obj;
 }
 function synthPalette(){
   const p=new Uint8Array(256*4);
   for(let i=0;i<256;i++){ p[i*4]=i; p[i*4+1]=(i*47)%256; p[i*4+2]=(i*103)%256; p[i*4+3]=255; }
   return p;
 }
-function fallbackTexture(pic){
+function fallbackTexture(pic,pal=0,shade=0){
   const s=32, d=new Uint8Array(s*s*4);
-  const r=(pic*53)%256, g=(pic*97)%256, b=(pic*151)%256;
+  const f=clamp(1-Math.max(0,shade)/40,.18,1),r=((pic*53+pal*29)%256)*f,g=((pic*97+pal*47)%256)*f,b=((pic*151+pal*71)%256)*f;
   for(let y=0;y<s;y++) for(let x=0;x<s;x++){
     const c=(((x>>3)^(y>>3))&1)?1.0:0.64, i=(y*s+x)*4;
     d[i]=r*c; d[i+1]=g*c; d[i+2]=b*c; d[i+3]=255;
@@ -704,159 +942,130 @@ function fallbackTexture(pic){
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
-  return {tex,w:s,h:s,real:false};
+  return {tex,w:s,h:s,real:false,pic,pal,shade};
 }
 
 /* ============================ 8. WORLD GEOMETRY ============================ */
 let worldGroups = [];   // static geometry batched by texture
 let wallSegments = [];   // collision segments (BUILD units)
+let collisionBySector = []; // indexed collision lists; avoids scanning the whole map every movement step
 let billboards = [];     // face sprites drawn each frame
 let spriteBatch = {pos:null,uv:null,col:null,cap:0,fpos:null,fuv:null,fcol:null};
 
 const shadeColor = shade => { const v = clamp(1 - (shade||0)/44, 0.20, 1.35); return [v,v,v,1]; };
 const zToY = z => -z / Z_SCALE;                 // BUILD z (down) -> world y (up)
 
-function buildWorld(md){
-  deleteWorld();
-  wallSegments = [];
-  billboards = [];
-
-  // Batch static triangles by texture key.
-  const groups = new Map();
-  const grp = (pic,alpha) => {
-    const k = (pic|0)+":"+(alpha?1:0);
-    if(!groups.has(k)) groups.set(k,{pic:pic|0,alpha:!!alpha,pos:[],uv:[],col:[]});
+function wallSource(md,w,lower){
+  if(lower&&(w.cstat&2)&&w.nextwall>=0&&w.nextwall<md.walls.length)return md.walls[w.nextwall];
+  return w;
+}
+function wallUVQuad(md,ownerSec,w,source,pic,zTop1,zTop2,zBot1,zBot2){
+  const size=tileSize(pic),reverse=source!==w;
+  let u0=source.xpanning,u1=source.xpanning+Math.max(1,source.xrepeat)*8;
+  if(reverse){const t=u0;u0=u1;u1=t;}if(source.cstat&8){const t=u0;u0=u1;u1=t;}
+  u0/=Math.max(1,size.w);u1/=Math.max(1,size.w);
+  let anchorSec=ownerSec;
+  if(source!==w&&source.nextsector>=0&&source.nextsector<md.sectors.length)anchorSec=md.sectors[source.nextsector];
+  const topAnchor1=planeZAt(md,anchorSec,true,w.x,w.y),topAnchor2=planeZAt(md,anchorSec,true,md.walls[w.point2].x,md.walls[w.point2].y);
+  const floorAnchor1=planeZAt(md,anchorSec,false,w.x,w.y),floorAnchor2=planeZAt(md,anchorSec,false,md.walls[w.point2].x,md.walls[w.point2].y);
+  const pan=source.ypanning*nextPowerOfTwo(size.h)/256,yr=Math.max(1,source.yrepeat)/2048;
+  const v=(z,topA,floorA)=>{
+    let q=((source.cstat&4)?(z-floorA):(z-topA))*yr+pan;
+    if(source.cstat&256)q=-q;
+    return q/Math.max(1,size.h);
+  };
+  return [[u0,v(zTop1,topAnchor1,floorAnchor1)],[u1,v(zTop2,topAnchor2,floorAnchor2)],
+          [u1,v(zBot2,topAnchor2,floorAnchor2)],[u0,v(zBot1,topAnchor1,floorAnchor1)]];
+}
+async function buildWorld(md){
+  deleteWorld();triangulationBudgetWarned=false;wallSegments=[];collisionBySector=Array.from({length:md.sectors.length},()=>[]);billboards=[];
+  const groups=new Map();
+  const grp=(pic,pal,shade,alpha=false,wrap=true,opacity=1)=>{
+    const k=`${pic|0}:${pal|0}:${shade|0}:${alpha?1:0}:${wrap?1:0}:${opacity}`;
+    if(!groups.has(k)){
+      if(groups.size>=MAX_MATERIAL_GROUPS)throw new Error(`Map requires more than ${MAX_MATERIAL_GROUPS} material groups; rendering stopped safely.`);
+      const tex=getTexture(pic,pal,shade,alpha);
+      const base=[1,1,1,opacity];
+      groups.set(k,{pic:pic|0,pal:pal|0,shade:shade|0,alpha:!!alpha,wrap:!!wrap,opacity,tex,pos:[],uv:[],col:[],base});
+    }
     return groups.get(k);
   };
-  const tri = (g,a,b,c,ua,ub,uc,col) => {
-    g.pos.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]);
-    g.uv.push(ua[0],ua[1],ub[0],ub[1],uc[0],uc[1]);
-    g.col.push(...col,...col,...col);
-  };
-  const quad = (pic,alpha,v0,v1,v2,v3,uv0,uv1,uv2,uv3,shade) => {
-    const g=grp(pic,alpha), col=shadeColor(shade);
-    tri(g,v0,v1,v2,uv0,uv1,uv2,col); tri(g,v0,v2,v3,uv0,uv2,uv3,col);
-  };
-
-  // ---- Sectors: floors, ceilings, walls ----
-  for(let si=0; si<md.sectors.length; si++){
-    const sec = md.sectors[si];
-
-    // Floor & ceiling (outer loop only; inner loops stay open as holes).
+  let geometryVertices=0;
+  const tri=(g,a,b,c,ua,ub,uc)=>{if((geometryVertices+=3)>MAX_GEOMETRY_VERTICES)throw new Error(`Geometry exceeds the safe ${MAX_GEOMETRY_VERTICES.toLocaleString("en-US")} vertex limit.`);g.pos.push(...a,...b,...c);g.uv.push(...ua,...ub,...uc);g.col.push(...g.base,...g.base,...g.base);};
+  const quad=(g,v0,v1,v2,v3,uv)=>{tri(g,v0,v1,v2,uv[0],uv[1],uv[2]);tri(g,v0,v2,v3,uv[0],uv[2],uv[3]);};
+  for(let si=0;si<md.sectors.length;si++){
+    const sec=md.sectors[si];if((si&127)===0)await nextFrame();
     for(const loop of sec.loops){
-      if(loop !== sec.outerLoop || loop.length < 3) continue;
-      const pts = loop.map(wi => ({x:md.walls[wi].x, y:md.walls[wi].y}));
-      const tris = triangulate(pts);
-      const fy = zToY(sec.floorz), cy = zToY(sec.ceilingz);
+      if(loop!==sec.outerLoop||loop.length<3)continue;
+      const pts=loop.map(wi=>({x:md.walls[wi].x,y:md.walls[wi].y})),tris=triangulate(pts);
       for(const t of tris){
-        const fv = t.map(i => [pts[i].x/XY_SCALE, fy, -pts[i].y/XY_SCALE]);
-        const fuv= t.map(i => [(pts[i].x + sec.floorxpanning*8)/512, (pts[i].y + sec.floorypanning*8)/512]);
-        tri(grp(sec.floorpicnum,false), fv[0],fv[1],fv[2], fuv[0],fuv[1],fuv[2], shadeColor(sec.floorshade));
-        const o=[t[2],t[1],t[0]];                       // reverse winding for ceiling
-        const cv = o.map(i => [pts[i].x/XY_SCALE, cy, -pts[i].y/XY_SCALE]);
-        const cuv= o.map(i => [(pts[i].x + sec.ceilingxpanning*8)/512, (pts[i].y + sec.ceilingypanning*8)/512]);
-        tri(grp(sec.ceilingpicnum,false), cv[0],cv[1],cv[2], cuv[0],cuv[1],cuv[2], shadeColor(sec.ceilingshade));
+        const fv=t.map(i=>[pts[i].x/XY_SCALE,zToY(planeZAt(md,sec,false,pts[i].x,pts[i].y)),pts[i].y/XY_SCALE]);
+        const fuv=t.map(i=>surfaceUV(md,sec,false,sec.floorpicnum,pts[i].x,pts[i].y));
+        tri(grp(sec.floorpicnum,sec.floorpal,sec.floorshade,false,true),fv[0],fv[1],fv[2],fuv[0],fuv[1],fuv[2]);
+        const o=[t[2],t[1],t[0]],cv=o.map(i=>[pts[i].x/XY_SCALE,zToY(planeZAt(md,sec,true,pts[i].x,pts[i].y)),pts[i].y/XY_SCALE]);
+        const cuv=o.map(i=>surfaceUV(md,sec,true,sec.ceilingpicnum,pts[i].x,pts[i].y));
+        tri(grp(sec.ceilingpicnum,sec.ceilingpal,sec.ceilingshade,false,true),cv[0],cv[1],cv[2],cuv[0],cuv[1],cuv[2]);
       }
     }
-
-    // Walls of this sector.
-    for(let wi=sec.wallptr; wi<sec.wallptr+sec.wallnum; wi++){
-      const w = md.walls[wi], w2 = md.walls[w.point2];
-      if(!w2) continue;
-      const x1=w.x/XY_SCALE, z1=-w.y/XY_SCALE, x2=w2.x/XY_SCALE, z2=-w2.y/XY_SCALE;
-      const len = Math.hypot(w2.x-w.x, w2.y-w.y);
-      const tex = getTexture(w.picnum,false);
-      const u0 = w.xpanning / Math.max(1,tex.w);
-      const u1 = u0 + len/Math.max(256, tex.w*8) * Math.max(1,w.xrepeat)/8;
-      const uv = (topZ,botZ) => {
-        const h = Math.abs(botZ-topZ);
-        const v0 = w.ypanning/Math.max(1,tex.h);
-        const v1 = v0 + h/Math.max(1024, tex.h*128) * Math.max(1,w.yrepeat)/8;
-        return [[u0,v0],[u1,v0],[u1,v1],[u0,v1]];
-      };
-
-      const solid = w.nextsector < 0 || w.nextsector >= md.sectors.length;
+    for(let wi=sec.wallptr;wi<sec.wallptr+sec.wallnum;wi++){
+      const w=md.walls[wi],w2=md.walls[w.point2];if(!w2)continue;
+      const x1=w.x/XY_SCALE,z1=w.y/XY_SCALE,x2=w2.x/XY_SCALE,z2=w2.y/XY_SCALE;
+      const cc1=planeZAt(md,sec,true,w.x,w.y),cc2=planeZAt(md,sec,true,w2.x,w2.y),ff1=planeZAt(md,sec,false,w.x,w.y),ff2=planeZAt(md,sec,false,w2.x,w2.y);
+      const c1=zToY(cc1),c2=zToY(cc2),f1=zToY(ff1),f2=zToY(ff2),solid=w.nextsector<0||w.nextsector>=md.sectors.length;
       if(solid){
-        const u = uv(sec.ceilingz, sec.floorz);
-        quad(w.picnum,false,[x1,zToY(sec.ceilingz),z1],[x2,zToY(sec.ceilingz),z2],
-                            [x2,zToY(sec.floorz),z2],[x1,zToY(sec.floorz),z1], u[0],u[1],u[2],u[3], w.shade);
-      } else {
-        const ns = md.sectors[w.nextsector];
-        if(ns.ceilingz > sec.ceilingz){                 // upper step
-          const u=uv(sec.ceilingz,ns.ceilingz);
-          quad(w.picnum,false,[x1,zToY(sec.ceilingz),z1],[x2,zToY(sec.ceilingz),z2],
-                              [x2,zToY(ns.ceilingz),z2],[x1,zToY(ns.ceilingz),z1], u[0],u[1],u[2],u[3], w.shade);
+        const sw=wallSource(md,w,false),g=grp(sw.picnum,sw.pal,sw.shade,false,true);
+        quad(g,[x1,c1,z1],[x2,c2,z2],[x2,f2,z2],[x1,f1,z1],wallUVQuad(md,sec,w,sw,sw.picnum,cc1,cc2,ff1,ff2));
+      }else{
+        const ns=md.sectors[w.nextsector],ncc1=planeZAt(md,ns,true,w.x,w.y),ncc2=planeZAt(md,ns,true,w2.x,w2.y),nff1=planeZAt(md,ns,false,w.x,w.y),nff2=planeZAt(md,ns,false,w2.x,w2.y);
+        const nc1=zToY(ncc1),nc2=zToY(ncc2),nf1=zToY(nff1),nf2=zToY(nff2);
+        if(ncc1>cc1+1e-5||ncc2>cc2+1e-5){
+          const sw=wallSource(md,w,false),g=grp(sw.picnum,sw.pal,sw.shade,false,true);
+          quad(g,[x1,c1,z1],[x2,c2,z2],[x2,nc2,z2],[x1,nc1,z1],wallUVQuad(md,sec,w,sw,sw.picnum,cc1,cc2,ncc1,ncc2));
         }
-        if(ns.floorz < sec.floorz){                     // lower step
-          const u=uv(ns.floorz,sec.floorz);
-          quad(w.picnum,false,[x1,zToY(ns.floorz),z1],[x2,zToY(ns.floorz),z2],
-                              [x2,zToY(sec.floorz),z2],[x1,zToY(sec.floorz),z1], u[0],u[1],u[2],u[3], w.shade);
+        if(nff1<ff1-1e-5||nff2<ff2-1e-5){
+          const sw=wallSource(md,w,true),g=grp(sw.picnum,sw.pal,sw.shade,false,true);
+          quad(g,[x1,nf1,z1],[x2,nf2,z2],[x2,f2,z2],[x1,f1,z1],wallUVQuad(md,sec,w,sw,sw.picnum,nff1,nff2,ff1,ff2));
         }
-        if(w.cstat & 16){                               // masked / one-way wall
-          const pic = w.overpicnum >= 0 ? w.overpicnum : w.picnum;
-          const top = Math.max(zToY(sec.ceilingz),zToY(ns.ceilingz));
-          const bot = Math.min(zToY(sec.floorz),zToY(ns.floorz));
-          const u = uv(Math.min(sec.ceilingz,ns.ceilingz), Math.max(sec.floorz,ns.floorz));
-          quad(pic,true,[x1,top,z1],[x2,top,z2],[x2,bot,z2],[x1,bot,z1], u[0],u[1],u[2],u[3], w.shade);
+        if(w.cstat&(16|32)){
+          const pic=w.overpicnum>=0?w.overpicnum:w.picnum,top1=Math.max(cc1,ncc1),top2=Math.max(cc2,ncc2),bot1=Math.min(ff1,nff1),bot2=Math.min(ff2,nff2);
+          if(top1<bot1||top2<bot2){
+            const opacity=(w.cstat&128)?((w.cstat&512)?.33:.67):1,g=grp(pic,w.pal,w.shade,true,true,opacity);
+            quad(g,[x1,zToY(top1),z1],[x2,zToY(top2),z2],[x2,zToY(bot2),z2],[x1,zToY(bot1),z1],wallUVQuad(md,sec,w,w,pic,top1,top2,bot1,bot2));
+          }
         }
       }
-
-      // Collision: solid walls, blocking walls, and impassable height changes.
-      let blocks = solid || !!(w.cstat & 1);
-      if(!blocks && w.nextsector>=0 && w.nextsector<md.sectors.length){
-        const ns=md.sectors[w.nextsector];
-        if(zToY(ns.floorz)-zToY(sec.floorz) > STEP_HEIGHT) blocks=true;
-        if(zToY(ns.ceilingz)-(zToY(ns.floorz)+EYE_HEIGHT) < (MIN_CLEARANCE-EYE_HEIGHT)) blocks=true;
+      let blocks=solid||!!(w.cstat&1);
+      if(!blocks&&w.nextsector>=0&&w.nextsector<md.sectors.length){const ns=md.sectors[w.nextsector],sf=zToY(ff1),nf=zToY(planeZAt(md,ns,false,w.x,w.y)),nc=zToY(planeZAt(md,ns,true,w.x,w.y));if(nf-sf>STEP_HEIGHT)blocks=true;if(nc-(nf+EYE_HEIGHT)<(MIN_CLEARANCE-EYE_HEIGHT))blocks=true;}
+      if(blocks){
+        const segment={x1:w.x,y1:w.y,x2:w2.x,y2:w2.y,sector:si};
+        wallSegments.push(segment);
+        collisionBySector[si].push(segment);
       }
-      if(blocks) wallSegments.push({x1:w.x,y1:w.y,x2:w2.x,y2:w2.y,sector:si});
     }
   }
-
-  // ---- Sprites: face -> billboards; wall/floor -> static quads ----
-  for(const sp of md.sprites){
-    if((sp.cstat & 32768) || sp.picnum < 0) continue;
-    if(sp.sectnum < 0 || sp.sectnum >= md.sectors.length) continue;
-    const orient = sp.cstat & 48;
-    if(orient === 0){ billboards.push(sp); continue; }   // face sprite -> per frame
-
-    // Static wall/floor sprite quad.
-    const tex = getTexture(sp.picnum, true);
-    const wm = Math.max(0.05, (tex.w||32) * Math.max(1,sp.xrepeat) / SPRITE_SCALE);
-    const hm = Math.max(0.05, (tex.h||32) * Math.max(1,sp.yrepeat) / SPRITE_SCALE);
-    const wx = sp.x/XY_SCALE, wz = -sp.y/XY_SCALE, wy = zToY(sp.z);
-    const a  = sp.ang * Math.PI/1024;                    // BUILD angle -> radians
-    const dir=[Math.cos(a), -Math.sin(a)];              // facing in world XZ
-
-    if(orient === 32 || orient === 48){                 // floor sprite (flat quad)
-      const ux=dir[0]*wm/2, uz=dir[1]*wm/2;             // half along facing
-      const vx=-dir[1]*hm/2, vz=dir[0]*hm/2;            // half perpendicular
-      const g=grp(sp.picnum,true), col=shadeColor(sp.shade);
-      const p=(sx,sz)=>[wx+sx,wy+0.02,wz+sz];
-      tri(g,p(-ux-vx,-uz-vz),p(ux-vx,uz-vz),p(ux+vx,uz+vz),[0,1],[1,1],[1,0],col);
-      tri(g,p(-ux-vx,-uz-vz),p(ux+vx,uz+vz),p(-ux+vx,-uz+vz),[0,1],[1,0],[0,0],col);
-    } else {                                             // wall sprite (vertical quad)
-      const px=-dir[1]*wm/2, pz=dir[0]*wm/2;            // half width along wall
-      const bottom=wy, top=wy+hm;
-      quad(sp.picnum,true,[wx-px,top,wz-pz],[wx+px,top,wz+pz],
-                          [wx+px,bottom,wz+pz],[wx-px,bottom,wz-pz],[0,0],[1,0],[1,1],[0,1],sp.shade);
+  for(let spi=0;spi<md.sprites.length;spi++){
+    const sp=md.sprites[spi];if((spi&511)===0)await nextFrame();if((sp.cstat&32768)||sp.picnum<0||sp.sectnum<0||sp.sectnum>=md.sectors.length)continue;
+    const orient=sp.cstat&48;if(orient===0){billboards.push(sp);continue;}
+    const tex=getTexture(sp.picnum,sp.pal,sp.shade,true),wm=Math.max(.05,(tex.w||32)*Math.max(1,sp.xrepeat)/SPRITE_SCALE),hm=Math.max(.05,(tex.h||32)*Math.max(1,sp.yrepeat)/SPRITE_SCALE);
+    const off=tileOffsets(sp.picnum),xoff=(off.x+sp.xoffset)*sp.xrepeat/SPRITE_SCALE,yoff=(off.y+sp.yoffset)*sp.yrepeat/SPRITE_SCALE;
+    const wx=sp.x/XY_SCALE,wz=sp.y/XY_SCALE,wy=zToY(sp.z),a=sp.ang*Math.PI/1024,dir=[Math.cos(a),Math.sin(a)],uL=(sp.cstat&4)?1:0,uR=(sp.cstat&4)?0:1,vT=(sp.cstat&8)?1:0,vB=(sp.cstat&8)?0:1;
+    const opacity=(sp.cstat&2)?.67:1,g=grp(sp.picnum,sp.pal,sp.shade,true,false,opacity);
+    if(orient===32||orient===48){
+      const ux=dir[0]*wm/2,uz=dir[1]*wm/2,vx=-dir[1]*hm/2,vz=dir[0]*hm/2,p=(sx,sz)=>[wx+sx,wy+.002,wz+sz];
+      tri(g,p(-ux-vx,-uz-vz),p(ux-vx,uz-vz),p(ux+vx,uz+vz),[uL,vB],[uR,vB],[uR,vT]);tri(g,p(-ux-vx,-uz-vz),p(ux+vx,uz+vz),p(-ux+vx,-uz+vz),[uL,vB],[uR,vT],[uL,vT]);
+    }else{
+      const px=-dir[1],pz=dir[0],cx=wx+px*xoff,cz=wz+pz*xoff,bottom=(sp.cstat&128)?wy-hm/2-yoff:wy-yoff,top=bottom+hm;
+      quad(g,[cx-px*wm/2,top,cz-pz*wm/2],[cx+px*wm/2,top,cz+pz*wm/2],[cx+px*wm/2,bottom,cz+pz*wm/2],[cx-px*wm/2,bottom,cz-pz*wm/2],[[uL,vT],[uR,vT],[uR,vB],[uL,vB]]);
     }
   }
-
-  worldGroups = [...groups.values()].map(uploadGroup).filter(g => g.n > 0);
+  worldGroups=[];let gi=0;for(const g of groups.values()){const up=uploadGroup(g);if(up.n>0)worldGroups.push(up);if((++gi&31)===0)await nextFrame();}
   allocSpriteBatch(billboards.length);
-  log("Geometry built: " + worldGroups.length + " draw groups, " + wallSegments.length +
-      " collision segments, " + billboards.length + " billboards, " +
-      (md.sprites.length - billboards.length) + " flat sprites.", "ok");
+  log(`Geometry built: ${worldGroups.length} material groups, ${wallSegments.length} collision segments, ${billboards.length} billboards, ${md.sprites.length-billboards.length} flat sprites.`,"ok");
 }
-
-function uploadGroup(g){
-  return { pic:g.pic, alpha:g.alpha, n:g.pos.length/3,
-    pos:makeBuffer(new Float32Array(g.pos)), uv:makeBuffer(new Float32Array(g.uv)),
-    col:makeBuffer(new Float32Array(g.col)), tex:getTexture(Math.max(0,g.pic), g.alpha) };
-}
+function uploadGroup(g){return {pic:g.pic,pal:g.pal,shade:g.shade,alpha:g.alpha,wrap:g.wrap,opacity:g.opacity,n:g.pos.length/3,pos:makeBuffer(new Float32Array(g.pos)),uv:makeBuffer(new Float32Array(g.uv)),col:makeBuffer(new Float32Array(g.col)),tex:g.tex};}
 function deleteWorld(){
   if(gl) for(const g of worldGroups){ gl.deleteBuffer(g.pos); gl.deleteBuffer(g.uv); gl.deleteBuffer(g.col); }
-  worldGroups=[]; wallSegments=[]; billboards=[];
+  worldGroups=[]; wallSegments=[]; collisionBySector=[]; billboards=[];
 }
 // Preallocate reusable buffers/arrays for billboards (no per-frame allocation).
 function allocSpriteBatch(count){
@@ -872,11 +1081,12 @@ function allocSpriteBatch(count){
 
 /* ---- Ear-clipping triangulation with a fan fallback for bad polygons ---- */
 function polyArea(p){ let a=0; for(let i=0,j=p.length-1;i<p.length;j=i++) a+=p[j].x*p[i].y-p[i].x*p[j].y; return a/2; }
+let triangulationBudgetWarned=false;
 function triangulate(points){
   const n=points.length; if(n<3) return [];
   let idx=[...Array(n).keys()];
   if(polyArea(points) < 0) idx.reverse();
-  const tris=[]; let guard=0;
+  const tris=[]; let guard=0,tests=0,aborted=false;
   while(idx.length>3 && guard++ < n*n){
     let ear=false;
     for(let i=0;i<idx.length;i++){
@@ -884,11 +1094,20 @@ function triangulate(points){
       const a=points[i0], b=points[i1], c=points[i2];
       if(!convex(a,b,c)) continue;
       let inside=false;
-      for(const k of idx){ if(k===i0||k===i1||k===i2) continue; if(inTri(points[k],a,b,c)){ inside=true; break; } }
+      for(const k of idx){
+        if(k===i0||k===i1||k===i2) continue;
+        if(++tests>MAX_TRIANGULATION_POINT_TESTS){aborted=true;break;}
+        if(inTri(points[k],a,b,c)){ inside=true; break; }
+      }
+      if(aborted) break;
       if(inside) continue;
       tris.push([i0,i1,i2]); idx.splice(i,1); ear=true; break;
     }
-    if(!ear) break;
+    if(aborted||!ear) break;
+  }
+  if(aborted){
+    if(!triangulationBudgetWarned){triangulationBudgetWarned=true;log("A highly complex sector exceeded the triangulation safety budget; a bounded fallback was used to keep the browser responsive.","warn");}
+    tris.length=0;for(let i=1;i<n-1;i++)tris.push([0,i,i+1]);return tris;
   }
   if(idx.length===3) tris.push([idx[0],idx[1],idx[2]]);
   if(!tris.length) for(let i=1;i<n-1;i++) tris.push([0,i,i+1]);
@@ -904,6 +1123,7 @@ function inTri(p,a,b,c){
 
 /* ============================ 9. CAMERA & INPUT ============================ */
 const cam = {x:0,y:1.6,z:0,yaw:0,pitch:0,sector:-1,fly:true,noclip:false};
+let viewMode="3d";
 let moveSpeed = WALK_SPEED;
 const keys = new Set();
 
@@ -912,17 +1132,18 @@ document.addEventListener("keydown", e => {
   if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   if(e.code === "Tab") e.preventDefault();
   keys.add(e.code);
+  if(e.code==="KeyV"){ e.preventDefault(); setViewMode(viewMode==="3d"?"2d":"3d"); return; }
   if(e.code==="KeyF"){ cam.fly=!cam.fly; if(!cam.fly) cam.noclip=false; }
   if(e.code==="KeyN"){ cam.noclip=!cam.noclip; if(cam.noclip) cam.fly=true; }
   if(e.code==="KeyR") resetCamera();
-  if(e.code==="KeyM") miniWrap.classList.toggle("hidden");
+  if(e.code==="KeyM" && viewMode==="3d" && mapData) miniWrap.classList.toggle("hidden");
   if(e.code==="Tab")  panelEl.classList.toggle("hidden");
 });
 document.addEventListener("keyup", e => keys.delete(e.code));
-canvas.addEventListener("click", () => { canvas.focus(); if(canvas.requestPointerLock) canvas.requestPointerLock(); });
+canvas.addEventListener("click", () => { if(viewMode!=="3d") return; canvas.focus(); if(canvas.requestPointerLock) canvas.requestPointerLock(); });
 document.addEventListener("mousemove", e => {
   if(document.pointerLockElement !== canvas) return;
-  cam.yaw   -= e.movementX * 0.0022;
+  cam.yaw   += e.movementX * 0.0022;
   cam.pitch  = clamp(cam.pitch - e.movementY*0.0022, -1.5, 1.5);
 });
 canvas.addEventListener("wheel", e => { moveSpeed = clamp(moveSpeed * (e.deltaY<0?1.12:0.9), 1.2, 40); e.preventDefault(); }, {passive:false});
@@ -930,8 +1151,8 @@ canvas.addEventListener("wheel", e => { moveSpeed = clamp(moveSpeed * (e.deltaY<
 function resetCamera(){
   if(!mapData) return;
   cam.x = mapData.posx/XY_SCALE;
-  cam.z = -mapData.posy/XY_SCALE;
-  cam.yaw = -mapData.ang * Math.PI/1024;
+  cam.z = mapData.posy/XY_SCALE;
+  cam.yaw = mapData.ang * Math.PI/1024;
   cam.pitch = 0; cam.noclip = false; cam.fly = true;
   cam.sector = validSector(mapData.cursectnum) ? mapData.cursectnum : findSector(mapData.posx,mapData.posy);
   const sec = mapData.sectors[cam.sector] || mapData.sectors[0];
@@ -943,19 +1164,28 @@ const validSector = s => mapData && s>=0 && s<mapData.sectors.length;
 function teleportToSector(si){
   if(!validSector(si)) return;
   const s = mapData.sectors[si];
-  cam.x = s.centroid.x/XY_SCALE; cam.z = -s.centroid.y/XY_SCALE;
-  cam.y = zToY(s.floorz) + EYE_HEIGHT; cam.sector = si;
-  canvas.focus();
+  cam.x = s.centroid.x/XY_SCALE; cam.z = s.centroid.y/XY_SCALE;
+  cam.y = zToY(planeZAt(mapData,s,false,s.centroid.x,s.centroid.y)) + EYE_HEIGHT; cam.sector = si;
+  if(viewMode==="2d") center2DAt(s.centroid.x,s.centroid.y); else canvas.focus();
 }
-function teleportToSprite(sp){
-  cam.x = sp.x/XY_SCALE; cam.z = -sp.y/XY_SCALE;
-  cam.y = zToY(sp.z) + EYE_HEIGHT*0.6;
-  if(validSector(sp.sectnum)) cam.sector = sp.sectnum;
-  canvas.focus();
+function teleportToSprite(sp,index=-1){
+  if(!sp || !finite(sp.x,sp.y,sp.z)) return;
+  if(viewMode==="2d"){ center2DAt(sp.x,sp.y); map2d.selected={kind:"sprite",index:index>=0?index:mapData.sprites.indexOf(sp)}; return; }
+  const tx=sp.x/XY_SCALE,tz=sp.y/XY_SCALE,back=2.2;
+  let nx=tx-Math.cos(cam.yaw)*back,nz=tz-Math.sin(cam.yaw)*back;
+  let b=worldToBuild(nx,nz),candidate=findSector(b.x,b.y,sp.sectnum);
+  if(candidate<0){ nx=tx-Math.cos(sp.ang*Math.PI/1024)*back; nz=tz-Math.sin(sp.ang*Math.PI/1024)*back; b=worldToBuild(nx,nz); candidate=findSector(b.x,b.y,sp.sectnum); }
+  if(candidate<0){ nx=tx;nz=tz;candidate=validSector(sp.sectnum)?sp.sectnum:findSector(sp.x,sp.y); }
+  b=worldToBuild(nx,nz);
+  cam.x=nx;cam.z=nz;if(candidate>=0)cam.sector=candidate;
+  const sec=validSector(cam.sector)?mapData.sectors[cam.sector]:null;
+  if(sec){const floorY=zToY(planeZAt(mapData,sec,false,b.x,b.y)),ceilY=zToY(planeZAt(mapData,sec,true,b.x,b.y));cam.y=clamp(floorY+EYE_HEIGHT,floorY+0.15,ceilY-0.15);}
+  cam.yaw=Math.atan2(tz-cam.z,tx-cam.x);cam.pitch=clamp(Math.atan2(zToY(sp.z)-cam.y,Math.hypot(tx-cam.x,tz-cam.z)),-1.2,1.2);canvas.focus();
 }
 
 function update(dt){
   if(!mapData) return;
+  if(viewMode==="2d"){ update2DControls(dt); return; }
   const run = keys.has("ShiftLeft")||keys.has("ShiftRight");
   const speed = moveSpeed * (run?RUN_MULT:1) * dt;
   const free = cam.fly || cam.noclip;
@@ -993,7 +1223,7 @@ function update(dt){
     const s = findSector(b.x,b.y,cam.sector);
     if(s>=0) cam.sector=s;
     const sec = mapData.sectors[cam.sector];
-    if(sec) cam.y += (zToY(sec.floorz)+EYE_HEIGHT - cam.y) * Math.min(1, dt*16); // smooth to floor
+    if(sec) cam.y += (zToY(planeZAt(mapData,sec,false,b.x,b.y))+EYE_HEIGHT - cam.y) * Math.min(1, dt*16); // smooth to floor
   }
 }
 
@@ -1005,13 +1235,15 @@ function moveTo(nx,nz){
   if(!cam.fly){
     const os=mapData.sectors[cam.sector], nsec=mapData.sectors[ns];
     if(os && nsec){
-      if(zToY(nsec.floorz)-zToY(os.floorz) > STEP_HEIGHT) return false;
-      if(zToY(nsec.ceilingz)-(zToY(nsec.floorz)+EYE_HEIGHT) < (MIN_CLEARANCE-EYE_HEIGHT)) return false;
+      const of=zToY(planeZAt(mapData,os,false,b.x,b.y)), nf=zToY(planeZAt(mapData,nsec,false,b.x,b.y));
+      const nc=zToY(planeZAt(mapData,nsec,true,b.x,b.y));
+      if(nf-of > STEP_HEIGHT) return false;
+      if(nc-(nf+EYE_HEIGHT) < (MIN_CLEARANCE-EYE_HEIGHT)) return false;
     }
   }
   cam.x=nx; cam.z=nz; cam.sector=ns; return true;
 }
-const worldToBuild = (x,z) => ({x:x*XY_SCALE, y:-z*XY_SCALE});
+const worldToBuild = (x,z) => ({x:x*XY_SCALE, y:z*XY_SCALE});
 
 /* ============================ 10. SECTORS & COLLISION ============================ */
 function findSector(x,y,prefer=-1){
@@ -1046,9 +1278,10 @@ function blocksAt(x,y,sector){
   const cand = new Set([sector,cam.sector]);
   if(validSector(sector)) for(const n of mapData.sectors[sector].neighbors) cand.add(n);
   if(validSector(cam.sector)) for(const n of mapData.sectors[cam.sector].neighbors) cand.add(n);
-  for(const seg of wallSegments){
-    if(!cand.has(seg.sector)) continue;
-    if(distSeg(x,y,seg.x1,seg.y1,seg.x2,seg.y2) < r) return true;
+  for(const si of cand){
+    if(!Number.isInteger(si)||si<0||si>=collisionBySector.length) continue;
+    for(const seg of collisionBySector[si])
+      if(distSeg(x,y,seg.x1,seg.y1,seg.x2,seg.y2) < r) return true;
   }
   return false;
 }
@@ -1092,12 +1325,12 @@ function setupMinimap(){
     offx: pad + (W-2*pad - s.w*scale)/2,
     offy: pad + (H-2*pad - s.h*scale)/2
   };
-  miniWrap.classList.remove("hidden");
+  miniWrap.classList.toggle("hidden",viewMode!=="3d");
 }
-// BUILD (x,y) -> minimap pixel. Y is inverted so north points up (Mapster style).
+// BUILD (x,y) -> minimap pixel. BUILD positive Y is drawn downward, matching Mapster32 2D mode.
 const miniPt = (bx,by) => ({
   x: miniT.offx + (bx - miniT.minx) * miniT.scale,
-  y: miniT.offy + (miniT.maxy - by) * miniT.scale
+  y: miniT.offy + (by - miniT.miny) * miniT.scale
 });
 function drawMinimap(){
   if(!mapData || !miniT || miniWrap.classList.contains("hidden")) return;
@@ -1123,8 +1356,8 @@ function drawMinimap(){
   // Player arrow.
   const b = worldToBuild(cam.x,cam.z);
   const p = miniPt(b.x,b.y);
-  const d = [Math.cos(cam.yaw), -Math.sin(cam.yaw)];    // world XZ heading
-  const tip = miniPt(b.x + d[0]*600, b.y - d[1]*600);   // build y = -worldZ
+  const d = [Math.cos(cam.yaw), Math.sin(cam.yaw)];
+  const tip = miniPt(b.x + d[0]*600, b.y + d[1]*600);
   const dx=tip.x-p.x, dy=tip.y-p.y, dl=Math.hypot(dx,dy)||1, ux=dx/dl, uy=dy/dl, px=-uy, py=ux;
   c.fillStyle="#f0b429";
   c.beginPath();
@@ -1140,12 +1373,102 @@ miniCv.addEventListener("click", e => {
   const px = (e.clientX-rect.left) * (miniCv.width/rect.width);
   const py = (e.clientY-rect.top)  * (miniCv.height/rect.height);
   const bx = (px - miniT.offx)/miniT.scale + miniT.minx;
-  const by = miniT.maxy - (py - miniT.offy)/miniT.scale;
-  cam.x = bx/XY_SCALE; cam.z = -by/XY_SCALE;
+  const by = (py - miniT.offy)/miniT.scale + miniT.miny;
+  cam.x = bx/XY_SCALE; cam.z = by/XY_SCALE;
   const si = findSector(bx,by,cam.sector);
   if(si>=0){ cam.sector=si; if(!cam.fly && !cam.noclip) cam.y = zToY(mapData.sectors[si].floorz)+EYE_HEIGHT; }
   canvas.focus();
 });
+
+
+/* ============================ FULL 2D VIEW ============================ */
+const map2d={centerX:0,centerY:0,zoom:1,fitZoom:1,drag:false,lastX:0,lastY:0,dirty:true,selected:null,needsFit:true};
+let tile2DCache=new Map(), pattern2DCache=new Map();
+function reset2DTextureCache(){ tile2DCache=new Map(); pattern2DCache=new Map(); map2d.dirty=true; }
+function setViewMode(mode){
+  viewMode=mode==="2d"?"2d":"3d";
+  if(document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+  canvas.classList.toggle("hidden",viewMode!=="3d");
+  map2dCv.classList.toggle("hidden",viewMode!=="2d");
+  crossEl.classList.toggle("hidden",viewMode!=="3d");
+  fit2dBtn.classList.toggle("hidden",viewMode!=="2d");
+  viewLabel.textContent=viewMode==="2d"?"2D TEXTURED VIEW":"3D VIEW";
+  viewModeBtn.textContent=viewMode==="2d"?"Switch to 3D":"Switch to 2D";
+  miniWrap.classList.toggle("hidden",viewMode==="2d" || !mapData);
+  if(viewMode==="2d"){
+    map2dCv.focus();
+    requestAnimationFrame(()=>{ if(mapData && map2d.needsFit) fit2DMap(); else map2d.dirty=true; });
+  } else canvas.focus();
+}
+function resize2DCanvas(){
+  const dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(1,Math.floor(map2dCv.clientWidth*dpr)),h=Math.max(1,Math.floor(map2dCv.clientHeight*dpr));
+  if(map2dCv.width!==w||map2dCv.height!==h){ map2dCv.width=w;map2dCv.height=h;map2d.dirty=true; }
+}
+function fit2DMap(){
+  if(!mapStats) return;
+  resize2DCanvas(); const b=mapStats.bounds,pad=70*(window.devicePixelRatio||1);
+  map2d.centerX=(b.minx+b.maxx)/2; map2d.centerY=(b.miny+b.maxy)/2;
+  map2d.zoom=Math.max(0.00002,Math.min((map2dCv.width-pad*2)/Math.max(1,b.w),(map2dCv.height-pad*2)/Math.max(1,b.h)));
+  map2d.fitZoom=map2d.zoom; map2d.needsFit=false; map2d.dirty=true;
+}
+function center2DAt(x,y){ map2d.centerX=x;map2d.centerY=y;map2d.dirty=true; }
+const buildTo2D=(x,y)=>({x:map2dCv.width/2+(x-map2d.centerX)*map2d.zoom,y:map2dCv.height/2+(y-map2d.centerY)*map2d.zoom});
+const screenTo2D=(x,y)=>({x:map2d.centerX+(x-map2dCv.width/2)/map2d.zoom,y:map2d.centerY+(y-map2dCv.height/2)/map2d.zoom});
+function update2DControls(dt){
+  const fast=(keys.has("ShiftLeft")||keys.has("ShiftRight"))?4:1;
+  const amount=700*fast*dt/Math.max(map2d.zoom,1e-6); let changed=false;
+  if(keys.has("KeyA")||keys.has("ArrowLeft")){map2d.centerX-=amount;changed=true;}
+  if(keys.has("KeyD")||keys.has("ArrowRight")){map2d.centerX+=amount;changed=true;}
+  if(keys.has("KeyW")||keys.has("ArrowUp")){map2d.centerY-=amount;changed=true;}
+  if(keys.has("KeyS")||keys.has("ArrowDown")){map2d.centerY+=amount;changed=true;}
+  if(changed) map2d.dirty=true;
+}
+map2dCv.addEventListener("pointerdown",e=>{ map2d.drag=true;map2d.lastX=e.clientX;map2d.lastY=e.clientY;map2dCv.setPointerCapture(e.pointerId);map2dCv.classList.add("dragging"); });
+map2dCv.addEventListener("pointermove",e=>{ if(!map2d.drag)return; const dpr=map2dCv.width/Math.max(1,map2dCv.clientWidth);map2d.centerX-=(e.clientX-map2d.lastX)*dpr/map2d.zoom;map2d.centerY-=(e.clientY-map2d.lastY)*dpr/map2d.zoom;map2d.lastX=e.clientX;map2d.lastY=e.clientY;map2d.dirty=true; });
+function end2DDrag(e){map2d.drag=false;map2dCv.classList.remove("dragging");try{map2dCv.releasePointerCapture(e.pointerId);}catch(_){}}
+map2dCv.addEventListener("pointerup",end2DDrag);map2dCv.addEventListener("pointercancel",end2DDrag);
+map2dCv.addEventListener("wheel",e=>{ if(!mapData)return;e.preventDefault();const r=map2dCv.getBoundingClientRect(),dpr=map2dCv.width/Math.max(1,r.width);const sx=(e.clientX-r.left)*dpr,sy=(e.clientY-r.top)*dpr,before=screenTo2D(sx,sy);const factor=e.deltaY<0?1.18:1/1.18;map2d.zoom=clamp(map2d.zoom*factor,map2d.fitZoom/80,map2d.fitZoom*300);const after=screenTo2D(sx,sy);map2d.centerX+=before.x-after.x;map2d.centerY+=before.y-after.y;map2d.dirty=true;},{passive:false});
+map2dCv.addEventListener("dblclick",e=>{ if(!mapData)return;const r=map2dCv.getBoundingClientRect(),dpr=map2dCv.width/Math.max(1,r.width),p=screenTo2D((e.clientX-r.left)*dpr,(e.clientY-r.top)*dpr),si=findSector(p.x,p.y,cam.sector);if(si>=0){cam.x=p.x/XY_SCALE;cam.z=p.y/XY_SCALE;cam.sector=si;map2d.selected={kind:"sector",index:si};map2d.dirty=true;} });
+viewModeBtn.addEventListener("click",()=>setViewMode(viewMode==="3d"?"2d":"3d"));
+fit2dBtn.addEventListener("click",fit2DMap);
+
+function getTileCanvas2D(pic,pal=0,shade=0,alpha=false){
+  const material=displayMaterial(pal,shade);pal=material.pal;shade=material.shade;
+  const key=`${pic}:${pal}:${shade}:${alpha?1:0}`;if(tile2DCache.has(key))return tile2DCache.get(key);
+  const tile=resources.tiles.get(pic),cv=document.createElement("canvas");
+  if(tile&&tile.w>0&&tile.h>0){
+    cv.width=tile.w;cv.height=tile.h;const cx=cv.getContext("2d"),im=cx.createImageData(tile.w,tile.h),base=resources.palette||synthPalette(),f=resources.shadeTable?1:clamp(1-Math.max(0,shade)/32,.12,1);
+    for(let x=0;x<tile.w;x++)for(let y=0;y<tile.h;y++){const raw=tile.data[x*tile.h+y]||0,idx=mappedPaletteIndex(raw,pal,shade),di=(y*tile.w+x)*4;im.data[di]=base[idx*4]*f;im.data[di+1]=base[idx*4+1]*f;im.data[di+2]=base[idx*4+2]*f;im.data[di+3]=(alpha&&raw===255)?0:255;}cx.putImageData(im,0,0);
+  }else{cv.width=cv.height=32;const cx=cv.getContext("2d"),f=clamp(1-Math.max(0,shade)/40,.18,1),r=((pic*53+pal*29)%256)*f,g=((pic*97+pal*47)%256)*f,b=((pic*151+pal*71)%256)*f;cx.fillStyle=`rgb(${r},${g},${b})`;cx.fillRect(0,0,32,32);cx.fillStyle="rgba(0,0,0,.28)";cx.fillRect(0,0,16,16);cx.fillRect(16,16,16,16);cx.fillStyle="rgba(255,255,255,.8)";cx.font="8px monospace";cx.fillText(String(pic).slice(-4),2,30);}
+  if(tile2DCache.size>=MAX_2D_TILE_CACHE){const first=tile2DCache.keys().next().value;if(first!==undefined)tile2DCache.delete(first);}
+  tile2DCache.set(key,cv);return cv;
+}
+function sectorPath2D(c,sec){
+  c.beginPath();
+  for(const loop of sec.loops){ if(loop.length<3)continue; const p0=buildTo2D(mapData.walls[loop[0]].x,mapData.walls[loop[0]].y);c.moveTo(p0.x,p0.y);for(let i=1;i<loop.length;i++){const w=mapData.walls[loop[i]],p=buildTo2D(w.x,w.y);c.lineTo(p.x,p.y);}c.closePath(); }
+}
+function visible2DBounds(){ const a=screenTo2D(0,0),b=screenTo2D(map2dCv.width,map2dCv.height);return {minx:Math.min(a.x,b.x),maxx:Math.max(a.x,b.x),miny:Math.min(a.y,b.y),maxy:Math.max(a.y,b.y)}; }
+function draw2DGrid(c){
+  const target=70,mapUnits=[16,32,64,128,256,512,1024,2048,4096,8192,16384,32768,65536];let step=mapUnits[mapUnits.length-1];for(const u of mapUnits){if(u*map2d.zoom>=target){step=u;break;}}
+  const b=visible2DBounds();c.lineWidth=1;c.strokeStyle="rgba(90,112,145,.13)";c.beginPath();for(let x=Math.floor(b.minx/step)*step;x<=b.maxx;x+=step){const p=buildTo2D(x,0);c.moveTo(p.x,0);c.lineTo(p.x,map2dCv.height);}for(let y=Math.floor(b.miny/step)*step;y<=b.maxy;y+=step){const p=buildTo2D(0,y);c.moveTo(0,p.y);c.lineTo(map2dCv.width,p.y);}c.stroke();
+}
+function render2D(){
+  resize2DCanvas(); if(viewMode!=="2d"||!map2d.dirty)return; map2d.dirty=false;
+  const c=map2dCv.getContext("2d",{alpha:false}),W=map2dCv.width,H=map2dCv.height;c.setTransform(1,0,0,1,0,0);c.fillStyle="#06080d";c.fillRect(0,0,W,H);
+  if(!mapData){hudEl.textContent="No map loaded.";return;} draw2DGrid(c);const vis=visible2DBounds();let textured=0;
+  for(let si=0;si<mapData.sectors.length;si++){const sec=mapData.sectors[si],b=sec.bbox;if(!b||b.maxx<vis.minx||b.minx>vis.maxx||b.maxy<vis.miny||b.miny>vis.maxy)continue;sectorPath2D(c,sec);c.save();try{c.clip("evenodd");}catch(_){c.clip();}
+    if(optTextures.checked&&textured<MAX_2D_TEXTURED_SECTORS){const tile=getTileCanvas2D(sec.floorpicnum,sec.floorpal,sec.floorshade,false),pat=c.createPattern(tile,"repeat");if(pat){if(pat.setTransform&&typeof DOMMatrix!=="undefined"){const stat=sec.floorstat,unit=(stat&8)?32:16,sx=(stat&16)?-unit*map2d.zoom:unit*map2d.zoom,sy=(stat&32)?-unit*map2d.zoom:unit*map2d.zoom,origin=buildTo2D(-sec.floorxpanning*unit,-sec.floorypanning*unit);pat.setTransform((stat&4)?new DOMMatrix([0,sy,sx,0,origin.x,origin.y]):new DOMMatrix([sx,0,0,sy,origin.x,origin.y]));}c.globalAlpha=.68;c.fillStyle=pat;c.fillRect(0,0,W,H);textured++;}else{c.fillStyle="#111827";c.fillRect(0,0,W,H);}}else{const v=clamp(46-sec.floorshade,10,70);c.fillStyle=`rgb(${v},${v+5},${v+10})`;c.fillRect(0,0,W,H);}c.restore();}
+  c.globalAlpha=1;c.lineWidth=Math.max(1,(window.devicePixelRatio||1));for(let wi=0;wi<mapData.walls.length;wi++){const w=mapData.walls[wi],w2=mapData.walls[w.point2];if(!w2)continue;if(Math.max(w.x,w2.x)<vis.minx||Math.min(w.x,w2.x)>vis.maxx||Math.max(w.y,w2.y)<vis.miny||Math.min(w.y,w2.y)>vis.maxy)continue;const a=buildTo2D(w.x,w.y),b=buildTo2D(w2.x,w2.y);c.strokeStyle=(w.cstat&1)?"#60d394":w.nextsector>=0?"#d55b70":"#e9eef8";c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();if(map2d.zoom>.06){c.fillStyle="#f7fbff";c.fillRect(a.x-1.5,a.y-1.5,3,3);}}
+  let texturedSprites=0;for(let i=0;i<mapData.sprites.length;i++){const sp=mapData.sprites[i];if(sp.cstat&32768)continue;if(!optMarkers.checked&&categoryOf(sp.picnum)==="marker")continue;if(sp.x<vis.minx||sp.x>vis.maxx||sp.y<vis.miny||sp.y>vis.maxy)continue;const p=buildTo2D(sp.x,sp.y),ang=sp.ang*Math.PI/1024,orient=sp.cstat&48,col=(CAT_META[categoryOf(sp.picnum)]||CAT_META.decor).color,size=clamp(3+map2d.zoom*40,3,11)*(window.devicePixelRatio||1);c.strokeStyle=col;c.fillStyle=col;c.lineWidth=1.5;
+    if(optTextures.checked&&map2d.zoom>.025&&texturedSprites<MAX_2D_TEXTURED_SPRITES&&orient===0){const tile=getTileCanvas2D(sp.picnum,sp.pal,sp.shade,true),dw=clamp(tile.width*sp.xrepeat/64*map2d.zoom*5,6,30)*(window.devicePixelRatio||1),dh=clamp(tile.height*sp.yrepeat/64*map2d.zoom*5,6,30)*(window.devicePixelRatio||1);c.drawImage(tile,p.x-dw/2,p.y-dh/2,dw,dh);texturedSprites++;}
+    else if(orient===16){const dx=Math.cos(ang+Math.PI/2)*size,dy=Math.sin(ang+Math.PI/2)*size;c.beginPath();c.moveTo(p.x-dx,p.y-dy);c.lineTo(p.x+dx,p.y+dy);c.stroke();}
+    else if(orient===32||orient===48){c.strokeRect(p.x-size,p.y-size,size*2,size*2);}
+    else{c.beginPath();c.arc(p.x,p.y,size*.45,0,Math.PI*2);c.fill();c.beginPath();c.moveTo(p.x,p.y);c.lineTo(p.x+Math.cos(ang)*size,p.y+Math.sin(ang)*size);c.stroke();}}
+  const drawArrow=(bx,by,ang,color,scale=1)=>{const p=buildTo2D(bx,by),s=12*(window.devicePixelRatio||1)*scale,ux=Math.cos(ang),uy=Math.sin(ang),px=-uy,py=ux;c.fillStyle=color;c.beginPath();c.moveTo(p.x+ux*s,p.y+uy*s);c.lineTo(p.x-ux*s*.55+px*s*.48,p.y-uy*s*.55+py*s*.48);c.lineTo(p.x-ux*s*.55-px*s*.48,p.y-uy*s*.55-py*s*.48);c.closePath();c.fill();};
+  drawArrow(mapData.posx,mapData.posy,mapData.ang*Math.PI/1024,"#63e6a5",.75);const bp=worldToBuild(cam.x,cam.z);drawArrow(bp.x,bp.y,cam.yaw,"#f0b429",1);
+  const paletteMode=optMapPalette.checked?"map accurate":"default full-bright";
+  hudEl.innerHTML=`<span class="k">Mode</span> textured 2D<br><span class="k">Palette</span> ${paletteMode}<br><span class="k">Zoom</span> ${(map2d.zoom/map2d.fitZoom).toFixed(2)}×<br><span class="k">Center</span> ${Math.round(map2d.centerX)}, ${Math.round(map2d.centerY)}<br><span class="k">Visible textures</span> ${textured} sectors / ${texturedSprites} sprites`;
+}
 
 /* ============================ 13. INFO PANELS ============================ */
 function bar(name,color,value,max){
@@ -1174,12 +1497,27 @@ function renderInfoTab(){
   html += statRow("Blocking walls", fmt(s.blocking));
   html += statRow("Masked walls", fmt(s.masked));
   html += statRow("Tagged sectors", fmt(s.sectorTags));
+  html += statRow("Tagged walls", fmt(s.wallTags));
   html += statRow("Tagged sprites", fmt(s.spriteTags));
+  html += statRow("Sloped floors", fmt(s.slopedFloors));
+  html += statRow("Sloped ceilings", fmt(s.slopedCeilings));
 
   html += `<div class="section">Dimensions</div>`;
   html += statRow("Bounds (BUILD)", `${fmt(s.bounds.w)} × ${fmt(s.bounds.h)}`);
   html += statRow("Bounds (metres)", `${(s.bounds.w/XY_SCALE).toFixed(1)} × ${(s.bounds.h/XY_SCALE).toFixed(1)} m`);
   html += statRow("Total floor area", `${fmt(Math.round(s.floorAreaM2))} m²`);
+  html += statRow("Source / parsed bytes", `${fmt(s.sourceBytes)} / ${fmt(s.parsedBytes)}`);
+  html += statRow("Trailing bytes", fmt(s.trailingBytes));
+  html += `<div class="section">Unique texture tiles</div>`;
+  html += statRow("All referenced tiles", fmt(s.uniqueTiles.all));
+  html += statRow("Floor / ceiling", `${fmt(s.uniqueTiles.floor)} / ${fmt(s.uniqueTiles.ceiling)}`);
+  html += statRow("Wall / overtexture", `${fmt(s.uniqueTiles.wall)} / ${fmt(s.uniqueTiles.over)}`);
+  html += statRow("Sprite", fmt(s.uniqueTiles.sprite));
+  html += `<div class="section">Integrity check</div>`;
+  html += statRow("Errors", fmt(s.validation.errors));
+  html += statRow("Warnings", fmt(s.validation.warnings));
+  for(const issue of s.validation.issues.slice(0,20)) html += `<div class="issue ${issue.severity==="error"?"bad":""}"><b>${escapeHtml(issue.severity.toUpperCase())}</b> · ${escapeHtml(issue.kind)} ${issue.index>=0?issue.index:""}: ${escapeHtml(issue.message)}</div>`;
+  if(s.validation.issues.length>20) html += `<p class="hint">${fmt(s.validation.issues.length-20)} additional issue(s) are included in the full JSON export.</p>`;
 
   html += `<div class="section">Sprites by category</div><div class="bars">`;
   const maxCat = Math.max(1, ...Object.values(s.cats));
@@ -1197,96 +1535,50 @@ function renderInfoTab(){
   $("tab-info").innerHTML = html;
 }
 
-let allObjects = [];   // {sp, name, cat} flattened once for the Objects tab
+let allObjects = [],objPage=0,objQuery="",selectedObject=-1;
 function renderObjectsTab(){
-  const s = mapStats;
-  let html = `<div class="section">Item breakdown</div><div class="bars">`;
-  const maxTop = Math.max(1, ...s.topPics.slice(0,14).map(x=>x.n));
-  for(const t of s.topPics.slice(0,14)){
-    const col = (CAT_META[t.cat]||CAT_META.decor).color;
-    html += bar(`${t.name} (${t.pic})`, col, t.n, maxTop);
-  }
-  html += `</div>`;
-  html += `<div class="section">All sprites (${fmt(mapData.sprites.length)})</div>`;
-  html += `<input id="search" placeholder="Filter by name, tile #, sector or tag…">`;
-  html += `<div class="list" id="objList"></div>`;
-  $("tab-objects").innerHTML = html;
-
-  allObjects = mapData.sprites.map((sp,i) => ({
-    i, sp, name:tileName(sp.picnum), cat:categoryOf(sp.picnum)
-  }));
-  $("search").addEventListener("input", e => fillObjList(e.target.value.trim().toLowerCase()));
-  fillObjList("");
+  const s=mapStats;let html=`<div class="section">Item breakdown</div><div class="bars">`;const maxTop=Math.max(1,...s.topPics.slice(0,14).map(x=>x.n));for(const t of s.topPics.slice(0,14)){const col=(CAT_META[t.cat]||CAT_META.decor).color;html+=bar(`${t.name} (${t.pic})`,col,t.n,maxTop);}html+=`</div><div class="section">All sprites (${fmt(mapData.sprites.length)})</div><input id="search" placeholder="Filter by index, name, tile, sector, category or tag…"><div class="pager"><button id="objPrev">Previous</button><span id="objPageInfo"></span><button id="objNext">Next</button></div><div class="list" id="objList"></div><div class="detailBox" id="objDetail"><div class="empty">Select Details to inspect every stored sprite field.</div></div>`;
+  $("tab-objects").innerHTML=html;allObjects=mapData.sprites.map((sp,i)=>({i,sp,name:tileName(sp.picnum),cat:categoryOf(sp.picnum)}));objPage=0;objQuery="";selectedObject=-1;
+  $("search").addEventListener("input",debounce(e=>{objQuery=e.target.value.trim().toLowerCase();objPage=0;fillObjList();}));
+  $("objPrev").addEventListener("click",()=>{objPage=Math.max(0,objPage-1);fillObjList();});$("objNext").addEventListener("click",()=>{objPage++;fillObjList();});
+  $("objList").addEventListener("click",e=>{const btn=e.target.closest("button[data-action]");if(!btn)return;const i=Number(btn.dataset.obj);if(!Number.isInteger(i)||i<0||i>=mapData.sprites.length)return;if(btn.dataset.action==="go")teleportToSprite(mapData.sprites[i],i);else showObjectDetail(i);});fillObjList();
 }
-function fillObjList(q){
-  const list = $("objList"); if(!list) return;
-  const rows = allObjects.filter(o => {
-    if(!q) return true;
-    return o.name.toLowerCase().includes(q) || String(o.sp.picnum)===q ||
-           ("sector "+o.sp.sectnum).includes(q) || String(o.sp.sectnum)===q ||
-           (o.sp.lotag && String(o.sp.lotag)===q) || o.cat.includes(q);
-  }).slice(0,400);   // cap for performance
-  if(!rows.length){ list.innerHTML = `<div class="empty">No matching objects.</div>`; return; }
-
-  list.innerHTML = rows.map(o => {
-    const col = (CAT_META[o.cat]||CAT_META.decor).color;
-    let sub = `#${o.sp.picnum} · ${spriteFlags(o.sp.cstat)}`;
-    if(o.sp.picnum===1 && SE_LOTAGS[o.sp.lotag]) sub += ` · SE ${o.sp.lotag}: ${SE_LOTAGS[o.sp.lotag]}`;
-    else if(o.sp.lotag||o.sp.hitag) sub += ` · lo ${o.sp.lotag} / hi ${o.sp.hitag}`;
-    sub += ` · sect ${o.sp.sectnum}`;
-    return `<div class="item"><div class="meta">`+
-      `<div class="title"><span class="dot" style="background:${col}"></span>${escapeHtml(o.name)}</div>`+
-      `<div class="sub">${escapeHtml(sub)}</div></div>`+
-      `<button class="go" data-obj="${o.i}">Go</button></div>`;
-  }).join("");
-
-  list.querySelectorAll("button[data-obj]").forEach(btn =>
-    btn.addEventListener("click", () => teleportToSprite(mapData.sprites[+btn.dataset.obj])));
+function objectMatches(o,q){if(!q)return true;const sp=o.sp;return String(o.i)===q||o.name.toLowerCase().includes(q)||String(sp.picnum)===q||String(sp.sectnum)===q||(`sector ${sp.sectnum}`).includes(q)||String(sp.lotag)===q||String(sp.hitag)===q||o.cat.includes(q);}
+function fillObjList(){
+  const list=$("objList");if(!list)return;const filtered=allObjects.filter(o=>objectMatches(o,objQuery)),pages=Math.max(1,Math.ceil(filtered.length/LIST_PAGE_SIZE));objPage=clamp(objPage,0,pages-1);const rows=filtered.slice(objPage*LIST_PAGE_SIZE,(objPage+1)*LIST_PAGE_SIZE);$("objPageInfo").textContent=`${fmt(filtered.length)} results · page ${objPage+1}/${pages}`;$("objPrev").disabled=objPage===0;$("objNext").disabled=objPage>=pages-1;
+  if(!rows.length){list.innerHTML=`<div class="empty">No matching objects.</div>`;return;}list.innerHTML=rows.map(o=>{const col=(CAT_META[o.cat]||CAT_META.decor).color;let sub=`index ${o.i} · tile #${o.sp.picnum} · ${spriteFlags(o.sp.cstat)}`;if(o.sp.picnum===1&&SE_LOTAGS[o.sp.lotag])sub+=` · SE ${o.sp.lotag}: ${SE_LOTAGS[o.sp.lotag]}`;else if(o.sp.lotag||o.sp.hitag)sub+=` · lo ${o.sp.lotag} / hi ${o.sp.hitag}`;sub+=` · sect ${o.sp.sectnum}`;return `<div class="item ${selectedObject===o.i?"selected":""}"><div class="meta"><div class="title"><span class="dot" style="background:${col}"></span>${escapeHtml(o.name)}</div><div class="sub">${escapeHtml(sub)}</div></div><div class="btnRow"><button class="go" data-action="details" data-obj="${o.i}">Details</button><button class="go" data-action="go" data-obj="${o.i}">Go</button></div></div>`;}).join("");
 }
+function showObjectDetail(i){selectedObject=i;const sp=mapData.sprites[i],data={index:i,name:tileName(sp.picnum),category:categoryOf(sp.picnum),flags:spriteFlags(sp.cstat),...sp};$("objDetail").innerHTML=`<div class="detailTitle">Sprite ${i} — ${escapeHtml(tileName(sp.picnum))}</div><pre>${escapeHtml(JSON.stringify(data,null,2))}</pre>`;fillObjList();}
 
+let secPage=0,secQuery="",selectedSector=-1;
 function renderNavTab(){
-  let html = `<div class="section">Quick jump</div>`;
-  html += `<div class="btnRow"><button id="navStart">Player start</button>`+
-          `<button id="navToggleFly">Toggle fly</button>`+
-          `<button id="navToggleClip">Toggle noclip</button></div>`;
-  html += `<p class="hint" style="margin-top:8px">Noclip lets you pass through walls, floors and ceilings freely. The minimap (press M) is also clickable to teleport.</p>`;
-  html += `<div class="section">Sectors (${fmt(mapData.sectors.length)})</div>`;
-  html += `<input id="secSearch" placeholder="Filter by sector # or tag…">`;
-  html += `<div class="list" id="secList"></div>`;
-  $("tab-nav").innerHTML = html;
-
-  $("navStart").addEventListener("click", resetCamera);
-  $("navToggleFly").addEventListener("click", () => { cam.fly=!cam.fly; if(!cam.fly) cam.noclip=false; canvas.focus(); });
-  $("navToggleClip").addEventListener("click", () => { cam.noclip=!cam.noclip; if(cam.noclip) cam.fly=true; canvas.focus(); });
-  $("secSearch").addEventListener("input", e => fillSecList(e.target.value.trim().toLowerCase()));
-  fillSecList("");
+  selectedSector=-1;
+  let html=`<div class="section">Quick jump</div><div class="btnRow"><button id="navStart">Player start</button><button id="navToggleFly">Toggle fly</button><button id="navToggleClip">Toggle noclip</button></div><p class="hint" style="margin-top:8px">Use Details to inspect every sector field. Go centers the current 2D view or moves the 3D camera.</p><div class="section">Sectors (${fmt(mapData.sectors.length)})</div><input id="secSearch" placeholder="Filter by sector index, tile or tag…"><div class="pager"><button id="secPrev">Previous</button><span id="secPageInfo"></span><button id="secNext">Next</button></div><div class="list" id="secList"></div><div class="detailBox" id="secDetail"><div class="empty">Select Details to inspect every stored and derived sector field.</div></div>`;$("tab-nav").innerHTML=html;
+  $("navStart").addEventListener("click",resetCamera);$("navToggleFly").addEventListener("click",()=>{cam.fly=!cam.fly;if(!cam.fly)cam.noclip=false;});$("navToggleClip").addEventListener("click",()=>{cam.noclip=!cam.noclip;if(cam.noclip)cam.fly=true;});
+  $("secSearch").addEventListener("input",debounce(e=>{secQuery=e.target.value.trim().toLowerCase();secPage=0;fillSecList();}));$("secPrev").addEventListener("click",()=>{secPage=Math.max(0,secPage-1);fillSecList();});$("secNext").addEventListener("click",()=>{secPage++;fillSecList();});
+  $("secList").addEventListener("click",e=>{const b=e.target.closest("button[data-action]");if(!b)return;const i=Number(b.dataset.sec);if(!Number.isInteger(i)||i<0||i>=mapData.sectors.length)return;b.dataset.action==="go"?teleportToSector(i):showSectorDetail(i);});fillSecList();
 }
-function fillSecList(q){
-  const list = $("secList"); if(!list) return;
-  const rows = mapData.sectors.map((s,i)=>({s,i})).filter(({s,i}) => {
-    if(!q) return true;
-    return String(i)===q || (s.lotag && String(s.lotag)===q) || (s.hitag && String(s.hitag)===q);
-  }).slice(0,400);
-  if(!rows.length){ list.innerHTML = `<div class="empty">No matching sectors.</div>`; return; }
+function fillSecList(){const list=$("secList");if(!list)return;const rows=mapData.sectors.map((s,i)=>({s,i})).filter(({s,i})=>!secQuery||String(i)===secQuery||String(s.lotag)===secQuery||String(s.hitag)===secQuery||String(s.floorpicnum)===secQuery||String(s.ceilingpicnum)===secQuery),pages=Math.max(1,Math.ceil(rows.length/LIST_PAGE_SIZE));secPage=clamp(secPage,0,pages-1);const page=rows.slice(secPage*LIST_PAGE_SIZE,(secPage+1)*LIST_PAGE_SIZE);$("secPageInfo").textContent=`${fmt(rows.length)} results · page ${secPage+1}/${pages}`;$("secPrev").disabled=secPage===0;$("secNext").disabled=secPage>=pages-1;if(!page.length){list.innerHTML=`<div class="empty">No matching sectors.</div>`;return;}list.innerHTML=page.map(({s,i})=>{const fh=zToY(s.floorz).toFixed(1),ch=zToY(s.ceilingz).toFixed(1);let sub=`floor ${fh}m · ceil ${ch}m · ${s.wallnum} walls · floor tile ${s.floorpicnum} · ceiling tile ${s.ceilingpicnum}`;if(s.lotag||s.hitag)sub+=` · lo ${s.lotag} / hi ${s.hitag}`;return `<div class="item ${selectedSector===i?"selected":""}"><div class="meta"><div class="title">Sector ${i}</div><div class="sub">${escapeHtml(sub)}</div></div><div class="btnRow"><button class="go" data-action="details" data-sec="${i}">Details</button><button class="go" data-action="go" data-sec="${i}">Go</button></div></div>`;}).join("");}
+function showSectorDetail(i){selectedSector=i;const s=mapData.sectors[i],data={index:i,ceilingFlags:sectorSurfaceFlags(s.ceilingstat),floorFlags:sectorSurfaceFlags(s.floorstat),...s};$("secDetail").innerHTML=`<div class="detailTitle">Sector ${i}</div><pre>${escapeHtml(JSON.stringify(data,null,2))}</pre>`;fillSecList();}
 
-  list.innerHTML = rows.map(({s,i}) => {
-    const fh=(zToY(s.floorz)).toFixed(1), ch=(zToY(s.ceilingz)).toFixed(1);
-    let sub = `floor ${fh}m · ceil ${ch}m · ${s.wallnum} walls`;
-    if(s.lotag||s.hitag) sub += ` · lo ${s.lotag} / hi ${s.hitag}`;
-    return `<div class="item"><div class="meta">`+
-      `<div class="title">Sector ${i}</div><div class="sub">${escapeHtml(sub)}</div></div>`+
-      `<button class="go" data-sec="${i}">Go</button></div>`;
-  }).join("");
-  list.querySelectorAll("button[data-sec]").forEach(btn =>
-    btn.addEventListener("click", () => teleportToSector(+btn.dataset.sec)));
+let wallPage=0,wallQuery="",selectedWall=-1;
+function renderWallsTab(){
+  selectedWall=-1;
+  $("tab-walls").innerHTML=`<div class="section">Walls (${fmt(mapData.walls.length)})</div><p class="hint">Every classic BUILD wall field is available below. Search accepts wall index, texture, next sector, lotag or hitag.</p><input id="wallSearch" placeholder="Filter wall index, texture, sector link or tag…"><div class="pager"><button id="wallPrev">Previous</button><span id="wallPageInfo"></span><button id="wallNext">Next</button></div><div class="list" id="wallList"></div><div class="detailBox" id="wallDetail"><div class="empty">Select Details to inspect every stored wall field.</div></div>`;
+  $("wallSearch").addEventListener("input",debounce(e=>{wallQuery=e.target.value.trim().toLowerCase();wallPage=0;fillWallList();}));$("wallPrev").addEventListener("click",()=>{wallPage=Math.max(0,wallPage-1);fillWallList();});$("wallNext").addEventListener("click",()=>{wallPage++;fillWallList();});$("wallList").addEventListener("click",e=>{const b=e.target.closest("button[data-wall]");if(!b)return;showWallDetail(Number(b.dataset.wall));});fillWallList();
 }
+function fillWallList(){const list=$("wallList");if(!list)return;const rows=mapData.walls.map((w,i)=>({w,i})).filter(({w,i})=>!wallQuery||String(i)===wallQuery||String(w.picnum)===wallQuery||String(w.overpicnum)===wallQuery||String(w.nextsector)===wallQuery||String(w.lotag)===wallQuery||String(w.hitag)===wallQuery),pages=Math.max(1,Math.ceil(rows.length/LIST_PAGE_SIZE));wallPage=clamp(wallPage,0,pages-1);const page=rows.slice(wallPage*LIST_PAGE_SIZE,(wallPage+1)*LIST_PAGE_SIZE);$("wallPageInfo").textContent=`${fmt(rows.length)} results · page ${wallPage+1}/${pages}`;$("wallPrev").disabled=wallPage===0;$("wallNext").disabled=wallPage>=pages-1;if(!page.length){list.innerHTML=`<div class="empty">No matching walls.</div>`;return;}list.innerHTML=page.map(({w,i})=>`<div class="item ${selectedWall===i?"selected":""}"><div class="meta"><div class="title">Wall ${i} · tile ${w.picnum}</div><div class="sub">(${w.x}, ${w.y}) → point2 ${w.point2} · next wall/sector ${w.nextwall}/${w.nextsector} · cstat ${w.cstat}${w.lotag||w.hitag?` · lo ${w.lotag} / hi ${w.hitag}`:""}</div></div><button class="go" data-wall="${i}">Details</button></div>`).join("");}
+function showWallDetail(i){if(!Number.isInteger(i)||i<0||i>=mapData.walls.length)return;selectedWall=i;const w=mapData.walls[i],p=mapData.walls[w.point2],data={index:i,ownerSector:mapData.wallOwners?mapData.wallOwners[i]:-1,flags:wallFlags(w.cstat),lengthBuild:p?Math.hypot(p.x-w.x,p.y-w.y):null,lengthMetres:p?Math.hypot(p.x-w.x,p.y-w.y)/XY_SCALE:null,...w};$("wallDetail").innerHTML=`<div class="detailTitle">Wall ${i}</div><pre>${escapeHtml(JSON.stringify(data,null,2))}</pre>`;fillWallList();}
 
 function refreshPanels(){
   mapStats = computeStats(mapData);
   renderInfoTab();
   renderObjectsTab();
   renderNavTab();
+  renderWallsTab();
   setupMinimap();
+  map2d.needsFit=true; map2d.dirty=true;
+  $("exportJsonBtn").disabled=false;
 }
 
 /* ============================ 14. RENDER LOOP ============================ */
@@ -1299,8 +1591,10 @@ function resizeCanvas(){
 }
 function drawGroup(g){
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, (g.tex&&g.tex.tex)?g.tex.tex:whiteTex.tex);
-  gl.uniform1f(program.uUseTex, optTextures.checked?1:0);
+  const tex=optTextures.checked?getDisplayTexture(g.pic,g.pal,g.shade,g.alpha):whiteTex;
+  gl.bindTexture(gl.TEXTURE_2D, (tex&&tex.tex)?tex.tex:whiteTex.tex);
+  gl.uniform1f(program.uUseTex,optTextures.checked?1:0);
+  gl.uniform1f(program.uWrap,g.wrap?1:0);
   gl.bindBuffer(gl.ARRAY_BUFFER,g.pos); gl.enableVertexAttribArray(program.aPos);   gl.vertexAttribPointer(program.aPos,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,g.uv);  gl.enableVertexAttribArray(program.aUv);    gl.vertexAttribPointer(program.aUv,2,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,g.col); gl.enableVertexAttribArray(program.aColor); gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
@@ -1316,27 +1610,30 @@ function drawBillboards(){
   const items=[];
   for(const sp of billboards){
     if(!optMarkers.checked && categoryOf(sp.picnum)==="marker") continue;
-    const sx=sp.x/XY_SCALE, sy=zToY(sp.z), sz=-sp.y/XY_SCALE;
+    const sx=sp.x/XY_SCALE, sy=zToY(sp.z), sz=sp.y/XY_SCALE;
     const dx=sx-cam.x, dz=sz-cam.z, d2=dx*dx+dz*dz;
     if(d2 > SPRITE_CULL2) continue;
-    const tex=getTexture(sp.picnum,true);
+    const tex=getDisplayTexture(sp.picnum,sp.pal,sp.shade,true);
     const w=Math.max(0.05,(tex.w||32)*Math.max(1,sp.xrepeat)/SPRITE_SCALE);
     const h=Math.max(0.05,(tex.h||32)*Math.max(1,sp.yrepeat)/SPRITE_SCALE);
     items.push({sp,sx,sy,sz,w,h,d2,tex});
   }
   items.sort((a,b)=>b.d2-a.d2);                            // back-to-front for alpha
+  allocSpriteBatch(items.length);
 
   let curTex=null, start=0, count=0;
   const flushRun=()=>{ if(count) runs.push({tex:curTex,start,count}); };
   for(const o of items){
     if(o.tex!==curTex){ flushRun(); curTex=o.tex; start=vi; count=0; }
-    const half=o.w/2, bottom=o.sy, top=o.sy+o.h, c=shadeColor(o.sp.shade);
-    const v=[[o.sx-right[0]*half,bottom,o.sz-right[2]*half],
-             [o.sx+right[0]*half,bottom,o.sz+right[2]*half],
-             [o.sx+right[0]*half,top,   o.sz+right[2]*half],
-             [o.sx-right[0]*half,top,   o.sz-right[2]*half]];
+    const off=tileOffsets(o.sp.picnum),xo=(off.x+o.sp.xoffset)*o.sp.xrepeat/SPRITE_SCALE,yo=(off.y+o.sp.yoffset)*o.sp.yrepeat/SPRITE_SCALE;
+    const half=o.w/2,c=[1,1,1,(o.sp.cstat&2)?.67:1];
+    const cx=o.sx+right[0]*xo,cz=o.sz+right[2]*xo,bottom=(o.sp.cstat&128)?o.sy-o.h/2-yo:o.sy-yo,top=bottom+o.h;
+    const v=[[cx-right[0]*half,bottom,cz-right[2]*half],[cx+right[0]*half,bottom,cz+right[2]*half],
+             [cx+right[0]*half,top,cz+right[2]*half],[cx-right[0]*half,top,cz-right[2]*half]];
     const verts=[v[0],v[1],v[2],v[0],v[2],v[3]];
-    const uvs=[0,1,1,1,1,0,0,1,1,0,0,0];
+    const uL=(o.sp.cstat&4)?1:0, uR=(o.sp.cstat&4)?0:1;
+    const vT=(o.sp.cstat&8)?1:0, vB=(o.sp.cstat&8)?0:1;
+    const uvs=[uL,vB,uR,vB,uR,vT,uL,vB,uR,vT,uL,vT];
     for(let k=0;k<6;k++){ const p=verts[k];
       pos[vi*3]=p[0]; pos[vi*3+1]=p[1]; pos[vi*3+2]=p[2];
       uv[vi*2]=uvs[k*2]; uv[vi*2+1]=uvs[k*2+1];
@@ -1354,7 +1651,7 @@ function drawBillboards(){
   gl.bindBuffer(gl.ARRAY_BUFFER,spriteBatch.col); gl.bufferData(gl.ARRAY_BUFFER,col.subarray(0,vi*4),gl.DYNAMIC_DRAW);
   gl.enableVertexAttribArray(program.aColor); gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
 
-  gl.uniform1f(program.uUseTex, optTextures.checked?1:0);
+  gl.uniform1f(program.uUseTex,optTextures.checked?1:0);gl.uniform1f(program.uWrap,0);
   gl.activeTexture(gl.TEXTURE0);
   for(const run of runs){
     gl.bindTexture(gl.TEXTURE_2D, run.tex.tex||whiteTex.tex);
@@ -1367,8 +1664,7 @@ function loop(now){
   const dt = Math.min(0.05, (now-lastTime)/1000 || 0);
   lastTime = now;
   update(dt);
-  render();
-  drawMinimap();
+  if(viewMode==="2d") render2D(); else { render(); drawMinimap(); }
   fpsFrames++;
   if(now-fpsTime > 500){ fps=Math.round(fpsFrames*1000/(now-fpsTime)); fpsFrames=0; fpsTime=now; }
   requestAnimationFrame(loop);                           // single RAF loop
@@ -1405,6 +1701,7 @@ function render(){
   hudEl.innerHTML =
     `<span class="k">FPS</span> ${fps}   <span class="k">Speed</span> ${moveSpeed.toFixed(1)} m/s<br>`+
     `<span class="k">Mode</span> ${mode}${locked?"":"  (click to look)"}<br>`+
+    `<span class="k">Palette</span> ${optMapPalette.checked?"map accurate":"default full-bright"}<br>`+
     `<span class="k">Sector</span> ${cam.sector} / ${mapData.sectors.length}<br>`+
     `<span class="k">Pos</span> ${cam.x.toFixed(1)}, ${cam.y.toFixed(1)}, ${cam.z.toFixed(1)}<br>`+
     `<span class="k">Sprites</span> ${optSprites.checked?billboards.length:"off"}`;
@@ -1417,7 +1714,55 @@ document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", (
   tab.classList.add("active");
   $("tab-"+tab.dataset.tab).classList.add("active");
 }));
-$("resetBtn").addEventListener("click", () => { resetCamera(); canvas.focus(); });
+$("resetBtn").addEventListener("click", () => { resetCamera(); if(viewMode==="2d") fit2DMap(); else canvas.focus(); });
+async function buildAnalysisBlob(){
+  if(!mapData) return null;
+  const parts=[]; let chunk="";
+  const push=text=>{ chunk+=text; if(chunk.length>=1024*1024){ parts.push(chunk); chunk=""; } };
+  const flush=()=>{ if(chunk){ parts.push(chunk); chunk=""; } };
+  const writeField=(name,value,comma=true)=>push(`  ${JSON.stringify(name)}: ${JSON.stringify(value)}${comma?",":""}\n`);
+  const writeArray=async(name,array,comma=true)=>{
+    push(`  ${JSON.stringify(name)}: [\n`);
+    for(let i=0;i<array.length;i++){
+      push(`    ${JSON.stringify(array[i])}${i+1<array.length?",":""}\n`);
+      if((i&255)===255){ flush(); await nextFrame(); }
+    }
+    push(`  ]${comma?",":""}\n`);
+  };
+  const header={mapversion:mapData.mapversion,posx:mapData.posx,posy:mapData.posy,posz:mapData.posz,ang:mapData.ang,cursectnum:mapData.cursectnum,sourceBytes:mapData.sourceBytes,parsedBytes:mapData.parsedBytes,trailingBytes:mapData.trailingBytes};
+  push("{\n");
+  writeField("format","BUILD / Mapster32 MAP Explorer analysis");
+  writeField("generatedAt",new Date().toISOString());
+  writeField("sourceFile",currentMapName);
+  writeField("summary",mapStats);
+  writeField("header",header);
+  await writeArray("sectors",mapData.sectors);
+  await writeArray("walls",mapData.walls);
+  await writeArray("wallOwners",mapData.wallOwners||[]);
+  await writeArray("sprites",mapData.sprites);
+  writeField("validation",mapData.validation,false);
+  push("}\n"); flush();
+  return new Blob(parts,{type:"application/json"});
+}
+function downloadBlob(name,blob){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.rel="noopener";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);}
+function usedTileSet(md){const x=new Set();for(const s of md.sectors){x.add(s.floorpicnum);x.add(s.ceilingpicnum);}for(const w of md.walls){x.add(w.picnum);if((w.cstat&(16|32))&&w.overpicnum>=0)x.add(w.overpicnum);}for(const sp of md.sprites)x.add(sp.picnum);return x;}
+function reportRenderFidelity(md){
+  const used=usedTileSet(md),missing=[...used].filter(n=>n>=0&&!resources.tiles.has(n)),pals=new Set();
+  for(const s of md.sectors){pals.add(s.floorpal);pals.add(s.ceilingpal);}for(const w of md.walls)pals.add(w.pal);for(const sp of md.sprites)pals.add(sp.pal);
+  const nonzero=[...pals].filter(Boolean),parallax=md.sectors.filter(s=>(s.floorstat|s.ceilingstat)&1).length;
+  if(missing.length)log(`${missing.length} of ${used.size} referenced tile(s) are unavailable; load the exact game/mod ART or GRP for real artwork.`,"warn");else log(`All ${used.size} referenced tile numbers were found in the supplied ART resources.`,"ok");
+  if(nonzero.length&&!resources.files.has("LOOKUP.DAT"))log(`Map uses palette lookup(s) ${nonzero.join(", ")}, but LOOKUP.DAT was not supplied; palette-swapped water/lighting cannot exactly match the game.`,"warn");
+  if(parallax)log(`${parallax} sector(s) use parallax sky/floor rendering. Texture alignment is preserved, but exact game sky selection/animation also depends on game-side sky definitions.`,"info");
+  if(md.mapversion===9)log("MAP version 9 may contain TROR links. Classic records are inspected, but full stacked-sector portal rendering remains engine-specific.","warn");
+  if(resources.palette&&resources.shadeTable)log("Classic PALETTE.DAT shade tables are active.","ok");
+}
+let currentMapName="map";
+$("exportJsonBtn").addEventListener("click",async()=>{
+  if(!mapData)return;const btn=$("exportJsonBtn"),old=btn.textContent;btn.disabled=true;btn.textContent="Preparing JSON…";
+  try{const blob=await buildAnalysisBlob();const base=currentMapName.replace(/\.[^.]+$/,"" ).replace(/[^a-z0-9._-]+/gi,"_")||"map";downloadBlob(`${base}_full_analysis.json`,blob);log("Full JSON analysis exported.","ok");}
+  catch(e){log("JSON export failed: "+e.message,"bad");console.error(e);}
+  finally{btn.textContent=old;btn.disabled=!mapData;}
+});
 
 $("loadBtn").addEventListener("click", async () => {
   try{
@@ -1425,29 +1770,60 @@ $("loadBtn").addEventListener("click", async () => {
     setLog("Loading…");
     const mapFile = $("mapFile").files[0];
     if(!mapFile) throw new Error("Choose a .MAP file first.");
+    if(mapFile.size>MAX_MAP_BYTES) throw new Error(`MAP file is ${(mapFile.size/1048576).toFixed(1)} MB; safety limit is ${MAX_MAP_BYTES/1048576} MB.`);
+    currentMapName=mapFile.name||"map";
+    $("loadBtn").disabled=true;$("exportJsonBtn").disabled=true;
+    mapData=null;mapStats=null;miniT=null;deleteWorld();miniWrap.classList.add("hidden");map2d.needsFit=true;map2d.dirty=true;
+    $("tab-info").innerHTML='<div class="empty">Loading map statistics…</div>';
+    $("tab-objects").innerHTML='<div class="empty">Loading objects…</div>';
+    $("tab-nav").innerHTML='<div class="empty">Loading sectors…</div>';
+    $("tab-walls").innerHTML='<div class="empty">Loading walls…</div>';
 
     const resFiles = [...$("resFiles").files];
-    fallbackTextures.clear();
     if(resFiles.length) await loadResources(resFiles);
-    else { resources = resetResources(); log("No GRP/ART/PALETTE — using procedural colours.", "warn"); }
+    else { disposeResources(); resources = resetResources(); log("No GRP/ART/PALETTE/LOOKUP — using procedural colours.", "warn"); }
 
     mapData = parseMap(await mapFile.arrayBuffer());
     log(`MAP v${mapData.mapversion}: ${fmt(mapData.sectors.length)} sectors, `+
         `${fmt(mapData.walls.length)} walls, ${fmt(mapData.sprites.length)} sprites.`, "ok");
 
-    buildWorld(mapData);
+    await buildWorld(mapData);
+    reportRenderFidelity(mapData);
     refreshPanels();
     resetCamera();
-    log("Done. Open the Map info / Objects / Navigate tabs to explore.", "ok");
+    if(viewMode==="2d") fit2DMap();
+    map2d.dirty=true;
+    log(`Integrity check: ${mapData.validation.errors} error(s), ${mapData.validation.warnings} warning(s).`,mapData.validation.errors?"bad":mapData.validation.warnings?"warn":"ok");
+    log("Done. Use V or the view button for the full textured 2D mode.", "ok");
     canvas.focus();
   } catch(e){
     log("ERROR: " + e.message, "bad");
-    console.error(e);
+    console.warn("Map load failed:",e);
+  } finally {
+    $("loadBtn").disabled=false;
+    $("exportJsonBtn").disabled=!mapData;
   }
 });
 
+window.addEventListener("resize",()=>{map2d.dirty=true;});
+optTextures.addEventListener("change",()=>{map2d.dirty=true;});
+optMarkers.addEventListener("change",()=>{map2d.dirty=true;});
+optMapPalette.addEventListener("change",()=>{
+  clearMaterialTextureCaches();
+  map2d.dirty=true;
+  updatePaletteModeUi(true);
+});
+
+canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();setLog("WebGL context was lost. Rendering is paused safely; reload the map after the browser restores graphics.");});
+canvas.addEventListener("webglcontextrestored",()=>{
+  gl=null;program=null;whiteTex=null;worldGroups=[];wallSegments=[];collisionBySector=[];billboards=[];
+  spriteBatch={pos:null,uv:null,col:null,cap:0,fpos:null,fuv:null,fcol:null};
+  resources.textures.clear();resources.texturePixels=0;resources.textureBudgetWarned=false;fallbackTextures.clear();reset2DTextureCache();
+  try{initGL();if(mapData)buildWorld(mapData).catch(e=>log("WebGL restore failed: "+e.message,"bad"));}
+  catch(e){log("WebGL restore failed: "+e.message,"bad");}
+});
 /* ============================ BOOTSTRAP ============================ */
-try{ initGL(); requestAnimationFrame(loop); }
+try{ updatePaletteModeUi(false); initGL(); requestAnimationFrame(loop); }
 catch(e){ setLog("WebGL init failed: " + e.message); }
 })();
 </script>
