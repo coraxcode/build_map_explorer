@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
-<title>BUILD / Mapster32 MAP Explorer — Sector Guide Audited Build</title>
+<title>BUILD / Mapster32 MAP Explorer — BUILD-Accurate Floor Mapping</title>
 <style>
 /* ---------- Design tokens: a dark "editor console" grounded in BUILD 2D mode ---------- */
 :root{
@@ -230,7 +230,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 "use strict";
 
 /* ============================================================================
-   BUILD / Mapster32 MAP Explorer — sprite-accurate, depth-stable sector-guide audited build.
+   BUILD / Mapster32 MAP Explorer — BUILD-accurate floor mapping, sprite and sector-guide audited build.
 
    This is a static viewer (not EDuke32 in a browser). It parses the classic
    BUILD .MAP format (v7/v8/v9), reconstructs sector/wall/sprite geometry, and
@@ -523,34 +523,81 @@ function tileOffsets(pic){
   const t=resources.tiles.get(Math.max(0,pic|0)),a=t?t.picanm|0:0;
   return {x:signedByte(a>>>8),y:signedByte(a>>>16)};
 }
-// BUILD floor/ceiling mapping: one ART texel normally spans 16 BUILD units.
-// Panning is expressed in texels; swap/flips act on the mapping axes, and
-// relative alignment uses the first wall as the local coordinate frame.
+// BUILD floor/ceiling mapping, matching the classic renderer conventions.
+// Global V runs against BUILD Y, relative alignment uses the first wall,
+// bit 8 halves the texel span (8 instead of 16 BUILD units), and panning
+// is measured over the next power-of-two tile dimensions.
 function surfaceUV(md,sec,isCeiling,pic,x,y){
   const stat=isCeiling?sec.ceilingstat:sec.floorstat;
   const xp=isCeiling?sec.ceilingxpanning:sec.floorxpanning;
   const yp=isCeiling?sec.ceilingypanning:sec.floorypanning;
-  const size=tileSize(pic), worldPerTexel=(stat&8)?32:16;
-  let tx=x,ty=y;
+  const size=tileSize(pic),w=Math.max(1,size.w),h=Math.max(1,size.h);
+  let tu=x,tv=-y,scale=(stat&8)?8:16;
+
   if((stat&64) && sec.wallptr>=0 && sec.wallptr<md.walls.length){
     const w0=md.walls[sec.wallptr],w1=md.walls[w0.point2];
     if(w1){
       const dx=w1.x-w0.x,dy=w1.y-w0.y,len=Math.hypot(dx,dy);
       if(len>1e-9){
         const rx=x-w0.x,ry=y-w0.y;
-        tx=(rx*dx+ry*dy)/len;
-        ty=(rx*(-dy)+ry*dx)/len;
-        const heinum=isCeiling?sec.ceilingheinum:sec.floorheinum;
-        if((stat&2)&&heinum) ty*=Math.hypot(4096,heinum)/4096;
+        tu=(rx*dx+ry*dy)/len;
+        tv=(-rx*dy+ry*dx)/len;
+
+        if(stat&2){
+          const baseZ=planeZAt(md,sec,isCeiling,w0.x,w0.y);
+          const pointZ=planeZAt(md,sec,isCeiling,x,y);
+          const dz=(pointZ-baseZ)/16;
+          const sloped=Math.hypot(tv,dz);
+          tv=tv<0?-sloped:sloped;
+        }else{
+          // BUILD forms the inverse wall length with integer division.
+          // Reproducing its small precision loss prevents multi-pixel shifts
+          // in first-wall-relative, non-sloped sectors.
+          const inverse=Math.floor(1048576/len);
+          if(inverse>0)scale*=1048576/(inverse*len);
+        }
       }
     }
   }
-  let px=tx/worldPerTexel,py=ty/worldPerTexel;
-  if(stat&4){const t=px;px=py;py=t;}
-  if(stat&16)px=-px;
-  if(stat&32)py=-py;
-  px+=xp;py+=yp;
-  return [px/Math.max(1,size.w),py/Math.max(1,size.h)];
+
+  if(stat&4){const t=tu;tu=tv;tv=t;}
+  if(stat&16)tu=-tu;
+  if(stat&32)tv=-tv;
+
+  const panU=nextPowerOfTwo(w)*xp/(256*w);
+  const panV=nextPowerOfTwo(h)*yp/(256*h);
+  return [tu/(scale*w)+panU,tv/(scale*h)+panV];
+}
+
+// Convert the same BUILD UV transform into a CanvasPattern matrix so the
+// textured 2D view agrees with the 3D renderer, including relative alignment,
+// flips, NPOT panning and double-smooshiness.
+function surfacePatternMatrix2D(sec,isCeiling,pic){
+  if(typeof DOMMatrix==="undefined"||!mapData)return null;
+  const size=tileSize(pic),w=Math.max(1,size.w),h=Math.max(1,size.h);
+  const anchor=(sec.wallptr>=0&&sec.wallptr<mapData.walls.length)
+    ? mapData.walls[sec.wallptr] : {x:0,y:0};
+  const pixelAt=(x,y)=>{
+    const uv=surfaceUV(mapData,sec,isCeiling,pic,x,y);
+    return {x:uv[0]*w,y:uv[1]*h};
+  };
+  const p0=pixelAt(anchor.x,anchor.y);
+  const px=pixelAt(anchor.x+1,anchor.y);
+  const py=pixelAt(anchor.x,anchor.y+1);
+  const a00=px.x-p0.x,a01=py.x-p0.x,a10=px.y-p0.y,a11=py.y-p0.y;
+  const det=a00*a11-a01*a10;
+  if(!Number.isFinite(det)||Math.abs(det)<1e-14)return null;
+  const i00=a11/det,i01=-a01/det,i10=-a10/det,i11=a00/det;
+  const originX=anchor.x-i00*p0.x-i01*p0.y;
+  const originY=anchor.y-i10*p0.x-i11*p0.y;
+  return new DOMMatrix([
+    i00*map2d.zoom,
+    i10*map2d.zoom,
+    i01*map2d.zoom,
+    i11*map2d.zoom,
+    map2dCv.width/2+(originX-map2d.centerX)*map2d.zoom,
+    map2dCv.height/2+(originY-map2d.centerY)*map2d.zoom
+  ]);
 }
 
 /* --- Duke3D tile names & categories (from the Duke4 InfoSuite reference). --- */
@@ -1016,6 +1063,48 @@ function spriteRenderOffsets(sp){
   if(sp.cstat&8)py=-py;
   return {x:px*Math.max(1,sp.xrepeat)/SPRITE_SCALE,y:py*Math.max(1,sp.yrepeat)/SPRITE_SCALE};
 }
+// Classic BUILD uses a 2048-entry, 14-bit sine table for sprite geometry.
+// Keeping the table and the signed scale operations local makes flat-sprite
+// placement deterministic across browsers and preserves Mapster32 pivots.
+const BUILD_SIN_TABLE=(()=>{
+  const table=new Int16Array(2048);
+  for(let i=0;i<2048;i++)table[i]=Math.round(Math.sin(i*Math.PI/1024)*16384);
+  return table;
+})();
+function buildSin(ang){return BUILD_SIN_TABLE[(ang|0)&2047];}
+function buildCos(ang){return BUILD_SIN_TABLE[((ang|0)+512)&2047];}
+function mulScale16(a,b){return Math.floor((a*b)/65536);}
+function dmulScale16(a,b,c,d){return Math.floor((a*b+c*d)/65536);}
+
+// Exact classic BUILD/Mapster32 pivot construction for floor-aligned sprites.
+// The returned corners correspond to artwork (0,0), (w,0), (w,h), (0,h).
+function floorSpriteQuad(sp){
+  const size=tileSize(sp.picnum),art=tileOffsets(sp.picnum);
+  const xr=sp.xrepeat|0,yr=sp.yrepeat|0;
+  const width=size.w*xr,height=size.h*yr;
+  let leftofs=(art.x+(sp.xoffset|0))*xr;
+  let topofs=(art.y+(sp.yoffset|0))*yr;
+  if(sp.cstat&4)leftofs=-leftofs;
+  if(sp.cstat&8)topofs=-topofs;
+
+  const centerx=(width>>1)+leftofs;
+  const centery=(height>>1)+topofs;
+  const sinang=buildSin(sp.ang),cosang=buildCos(sp.ang);
+
+  const x0=sp.x+dmulScale16(sinang,centerx,cosang,centery);
+  const y0=sp.y+dmulScale16(sinang,centery,-cosang,centerx);
+  const x1=x0-mulScale16(sinang,width);
+  const y1=y0+mulScale16(cosang,width);
+  const subx=mulScale16(cosang,height);
+  const suby=mulScale16(sinang,height);
+
+  return [
+    [x0/XY_SCALE,zToY(sp.z),y0/XY_SCALE],
+    [x1/XY_SCALE,zToY(sp.z),y1/XY_SCALE],
+    [(x1-subx)/XY_SCALE,zToY(sp.z),(y1-suby)/XY_SCALE],
+    [(x0-subx)/XY_SCALE,zToY(sp.z),(y0-suby)/XY_SCALE]
+  ];
+}
 // Wall-aligned sprites use BUILD's angle as their front-facing normal.
 // At that front face, the -side endpoint is screen-right and therefore
 // receives U=1 in the unflipped case. A generic left-to-right UV assignment
@@ -1131,15 +1220,16 @@ async function buildWorld(md){
     if(orient===32||orient===48){
       const g=grp(sp.picnum,sp.pal,sp.shade,true,false,opacity,STATIC_SPRITE_DEPTH_BIAS,opacity<.999?++translucentSerial:0,oneSided);
       spriteStats.floor++;if(orient===48)spriteStats.slopedExtension++;
-      // BUILD uses the angle as the image Y axis; image X is perpendicular to it.
-      const cx=wx+side[0]*xoff+normal[0]*yoff,cz=wz+side[1]*xoff+normal[1]*yoff;
-      const sx=side[0]*wm/2,sz=side[1]*wm/2,yx=normal[0]*hm/2,yz=normal[1]*hm/2,p=(dx,dz)=>[cx+dx,wy,cz+dz];
-      const q0=p(-sx-yx,-sz-yz),q1=p(sx-yx,sz-yz),q2=p(sx+yx,sz+yz),q3=p(-sx+yx,-sz+yz);
-      // A one-sided floor sprite changes its visible face when Y-flipped, as in BUILD.
+      const q=floorSpriteQuad(sp),q0=q[0],q1=q[1],q2=q[2],q3=q[3];
+      const uv0=[uL,vT],uv1=[uR,vT],uv2=[uR,vB],uv3=[uL,vB];
+
+      // BUILD's point order faces downward in WebGL coordinates. Normal
+      // floor sprites are visible from above, while Y-flipped one-sided
+      // sprites expose the opposite face.
       if(oneSided&&(sp.cstat&8)){
-        tri(g,q0,q2,q1,[uL,vB],[uR,vT],[uR,vB]);tri(g,q0,q3,q2,[uL,vB],[uL,vT],[uR,vT]);
+        tri(g,q0,q1,q2,uv0,uv1,uv2);tri(g,q0,q2,q3,uv0,uv2,uv3);
       }else{
-        tri(g,q0,q1,q2,[uL,vB],[uR,vB],[uR,vT]);tri(g,q0,q2,q3,[uL,vB],[uR,vT],[uL,vT]);
+        tri(g,q0,q2,q1,uv0,uv2,uv1);tri(g,q0,q3,q2,uv0,uv3,uv2);
       }
     }else{
       spriteStats.wall++;
@@ -1703,7 +1793,7 @@ function render2D(){
   const c=map2dCv.getContext("2d",{alpha:false}),W=map2dCv.width,H=map2dCv.height;c.setTransform(1,0,0,1,0,0);c.fillStyle="#06080d";c.fillRect(0,0,W,H);
   if(!mapData){hudEl.textContent="No map loaded.";return;} draw2DGrid(c);const vis=visible2DBounds();let textured=0;
   for(let si=0;si<mapData.sectors.length;si++){const sec=mapData.sectors[si],b=sec.bbox;if(!b||b.maxx<vis.minx||b.minx>vis.maxx||b.maxy<vis.miny||b.miny>vis.maxy)continue;sectorPath2D(c,sec);c.save();try{c.clip("evenodd");}catch(_){c.clip();}
-    if(optTextures.checked&&textured<MAX_2D_TEXTURED_SECTORS){const tile=getTileCanvas2D(sec.floorpicnum,sec.floorpal,sec.floorshade,false),pat=c.createPattern(tile,"repeat");if(pat){if(pat.setTransform&&typeof DOMMatrix!=="undefined"){const stat=sec.floorstat,unit=(stat&8)?32:16,sx=(stat&16)?-unit*map2d.zoom:unit*map2d.zoom,sy=(stat&32)?-unit*map2d.zoom:unit*map2d.zoom,origin=buildTo2D(-sec.floorxpanning*unit,-sec.floorypanning*unit);pat.setTransform((stat&4)?new DOMMatrix([0,sy,sx,0,origin.x,origin.y]):new DOMMatrix([sx,0,0,sy,origin.x,origin.y]));}c.globalAlpha=.68;c.fillStyle=pat;c.fillRect(0,0,W,H);textured++;}else{c.fillStyle="#111827";c.fillRect(0,0,W,H);}}else{const v=clamp(46-sec.floorshade,10,70);c.fillStyle=`rgb(${v},${v+5},${v+10})`;c.fillRect(0,0,W,H);}c.restore();}
+    if(optTextures.checked&&textured<MAX_2D_TEXTURED_SECTORS){const tile=getTileCanvas2D(sec.floorpicnum,sec.floorpal,sec.floorshade,false),pat=c.createPattern(tile,"repeat");if(pat){if(pat.setTransform&&typeof DOMMatrix!=="undefined"){const matrix=surfacePatternMatrix2D(sec,false,sec.floorpicnum);if(matrix)pat.setTransform(matrix);}c.globalAlpha=.68;c.fillStyle=pat;c.fillRect(0,0,W,H);textured++;}else{c.fillStyle="#111827";c.fillRect(0,0,W,H);}}else{const v=clamp(46-sec.floorshade,10,70);c.fillStyle=`rgb(${v},${v+5},${v+10})`;c.fillRect(0,0,W,H);}c.restore();}
   c.globalAlpha=1;c.lineWidth=Math.max(1,(window.devicePixelRatio||1));for(let wi=0;wi<mapData.walls.length;wi++){const w=mapData.walls[wi],w2=mapData.walls[w.point2];if(!w2)continue;if(Math.max(w.x,w2.x)<vis.minx||Math.min(w.x,w2.x)>vis.maxx||Math.max(w.y,w2.y)<vis.miny||Math.min(w.y,w2.y)>vis.maxy)continue;const a=buildTo2D(w.x,w.y),b=buildTo2D(w2.x,w2.y);c.strokeStyle=(w.cstat&1)?"#60d394":w.nextsector>=0?"#d55b70":"#e9eef8";c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();if(map2d.zoom>.06){c.fillStyle="#f7fbff";c.fillRect(a.x-1.5,a.y-1.5,3,3);}}
   let texturedSprites=0;for(let i=0;i<mapData.sprites.length;i++){const sp=mapData.sprites[i];if(sp.cstat&32768)continue;if(!optMarkers.checked&&categoryOf(sp.picnum)==="marker")continue;if(sp.x<vis.minx||sp.x>vis.maxx||sp.y<vis.miny||sp.y>vis.maxy)continue;const p=buildTo2D(sp.x,sp.y),ang=sp.ang*Math.PI/1024,orient=sp.cstat&48,col=(CAT_META[categoryOf(sp.picnum)]||CAT_META.decor).color,size=clamp(3+map2d.zoom*40,3,11)*(window.devicePixelRatio||1);c.strokeStyle=col;c.fillStyle=col;c.lineWidth=1.5;
     if(optTextures.checked&&map2d.zoom>.025&&texturedSprites<MAX_2D_TEXTURED_SPRITES&&orient===0){const tile=getTileCanvas2D(sp.picnum,sp.pal,sp.shade,true),dw=clamp(tile.width*sp.xrepeat/64*map2d.zoom*5,6,30)*(window.devicePixelRatio||1),dh=clamp(tile.height*sp.yrepeat/64*map2d.zoom*5,6,30)*(window.devicePixelRatio||1);c.drawImage(tile,p.x-dw/2,p.y-dh/2,dw,dh);texturedSprites++;}
@@ -2009,6 +2099,7 @@ async function buildAnalysisBlob(){
 function downloadBlob(name,blob){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.rel="noopener";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);}
 function usedTileSet(md){const x=new Set();for(const s of md.sectors){x.add(s.floorpicnum);x.add(s.ceilingpicnum);}for(const w of md.walls){x.add(w.picnum);if((w.cstat&(16|32))&&w.overpicnum>=0)x.add(w.overpicnum);}for(const sp of md.sprites)x.add(sp.picnum);return x;}
 function reportRenderFidelity(md){
+  log("BUILD floor/ceiling UV mapping and flat-sprite pivots are active (relative alignment, flips, NPOT panning and texture-half scaling).","ok");
   const multiLoop=md.sectors.filter(sec=>sec.loops&&sec.loops.length>1).length;
   if(multiLoop)log(`${multiLoop} sector(s) contain inner or nested loops; floors and ceilings are triangulated with real holes.`,"ok");
   const used=usedTileSet(md),missing=[...used].filter(n=>n>=0&&!resources.tiles.has(n)),pals=new Set();
