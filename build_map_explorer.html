@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
-<title>BUILD / Mapster32 MAP Explorer — Sprite Orientation Audited Build</title>
+<title>BUILD / Mapster32 MAP Explorer — Sector Guide Audited Build</title>
 <style>
 /* ---------- Design tokens: a dark "editor console" grounded in BUILD 2D mode ---------- */
 :root{
@@ -167,6 +167,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
       <label class="opt"><input id="optMarkers" type="checkbox"> Editor markers</label>
       <label class="opt"><input id="optMapPalette" type="checkbox" checked> Map palette & lighting</label>
     </div>
+    <p class="hint" id="textureModeHint">Textures enabled. Disable them to inspect the map with automatic 3D sector guide lines.</p>
     <p class="hint" id="paletteModeHint">Enabled: use the map's configured palette swaps and darkness. Disable for the default palette at full brightness while inspecting dark areas.</p>
     <div class="field">
       <label class="h">Internal resolution</label>
@@ -229,7 +230,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 "use strict";
 
 /* ============================================================================
-   BUILD / Mapster32 MAP Explorer — sprite-orientation-accurate, depth-stable audited material build.
+   BUILD / Mapster32 MAP Explorer — sprite-accurate, depth-stable sector-guide audited build.
 
    This is a static viewer (not EDuke32 in a browser). It parses the classic
    BUILD .MAP format (v7/v8/v9), reconstructs sector/wall/sprite geometry, and
@@ -279,6 +280,7 @@ const MASKED_WALL_SEPARATION = 0.0015;
 const WALL_SPRITE_SEPARATION = 0.0025;       // ~1.28 BUILD XY units: prevents coplanar wall flicker.
 const WALL_SPRITE_COPLANAR_EPSILON = 2.0;   // Only ornaments essentially touching a parallel wall are moved.
 const WALL_SPRITE_PARALLEL_DOT = 0.999;      // Do not alter sprites merely placed near a wall at another angle.
+const MAX_SECTOR_GUIDE_VERTICES = 900000;    // 3 reference lines per wall at the classic MAP maximum.
 
 /* ============================ 2. DOM REFS ============================ */
 const $ = id => document.getElementById(id);
@@ -298,6 +300,7 @@ const optSprites   = $("optSprites");
 const optCollision = $("optCollision");
 const optMarkers   = $("optMarkers");
 const optMapPalette= $("optMapPalette");
+const textureModeHint = $("textureModeHint");
 const paletteModeHint = $("paletteModeHint");
 const resolutionSel= $("resolution");
 
@@ -822,6 +825,13 @@ function getDisplayTexture(pic,pal=0,shade=0,alpha=false){
   const m=displayMaterial(pal,shade);
   return getTexture(pic,m.pal,m.shade,alpha);
 }
+function updateTextureModeUi(writeLog=false){
+  const enabled=!!(optTextures&&optTextures.checked);
+  if(textureModeHint)textureModeHint.textContent=enabled
+    ? "Textures enabled. Disable them to inspect the map with automatic 3D sector guide lines."
+    : "Textureless inspection mode: floor, ceiling and vertical sector guide lines are visible automatically in 3D.";
+  if(writeLog)log(enabled?"Textures enabled; 3D sector guides hidden.":"Textures disabled; 3D sector guides enabled.","info");
+}
 function updatePaletteModeUi(writeLog=false){
   const accurate=!!(optMapPalette&&optMapPalette.checked);
   if(paletteModeHint) paletteModeHint.textContent=accurate
@@ -967,6 +977,7 @@ function fallbackTexture(pic,pal=0,shade=0){
 
 /* ============================ 8. WORLD GEOMETRY ============================ */
 let worldGroups = [];   // static geometry batched by texture
+let sectorGuides = {pos:null,col:null,n:0}; // precomputed 3D sector reference lines
 let wallSegments = [];   // collision segments (BUILD units)
 let collisionBySector = []; // indexed collision lists; avoids scanning the whole map every movement step
 let billboards = [];     // face sprites drawn each frame
@@ -1147,12 +1158,59 @@ async function buildWorld(md){
     }
   }
   worldGroups=[];let gi=0;for(const g of groups.values()){const up=uploadGroup(g);if(up.n>0)worldGroups.push(up);if((++gi&31)===0)await nextFrame();}
+  buildSectorGuides(md);
   updateCameraFarPlane(md);
   allocSpriteBatch(billboards.length);
-  log(`Geometry built: ${worldGroups.length} material groups, ${wallSegments.length} collision segments, ${billboards.length} billboards, ${spriteStats.wall+spriteStats.floor} static sprites.`,"ok");
+  log(`Geometry built: ${worldGroups.length} material groups, ${wallSegments.length} collision segments, ${billboards.length} billboards, ${spriteStats.wall+spriteStats.floor} static sprites, ${sectorGuides.n/2} sector guide lines.`,"ok");
   if(spriteStats.wall||spriteStats.floor)log(`Static sprite fidelity: ${spriteStats.wall} wall-aligned, ${spriteStats.floor} floor-aligned, ${spriteStats.oneSided} one-sided; ${spriteStats.coplanarAdjusted} coplanar wall ornament(s) separated safely; wall-sprite handedness verified.`,"ok");
   if(spriteStats.slopedExtension)log(`${spriteStats.slopedExtension} sprite(s) use the cstat 48 sloped-sprite extension; their base rotation is preserved, but game-specific slope metadata may require EDuke32.`,"warn");
 }
+function deleteSectorGuides(){
+  if(gl&&sectorGuides){
+    if(sectorGuides.pos)gl.deleteBuffer(sectorGuides.pos);
+    if(sectorGuides.col)gl.deleteBuffer(sectorGuides.col);
+  }
+  sectorGuides={pos:null,col:null,n:0};
+}
+function buildSectorGuides(md){
+  deleteSectorGuides();
+  const pos=[],col=[];
+  const floorColor=[0.10,0.88,0.76,1.0];
+  const ceilingColor=[0.32,0.58,1.0,1.0];
+  const verticalColor=[1.0,0.66,0.20,1.0];
+  let truncated=false;
+  const line=(a,b,color)=>{
+    if(pos.length/3+2>MAX_SECTOR_GUIDE_VERTICES){truncated=true;return false;}
+    pos.push(a[0],a[1],a[2],b[0],b[1],b[2]);
+    col.push(...color,...color);
+    return true;
+  };
+  outer: for(let si=0;si<md.sectors.length;si++){
+    const sec=md.sectors[si],start=sec.wallptr,end=start+sec.wallnum;
+    if(start<0||end>md.walls.length||sec.wallnum<1)continue;
+    for(let wi=start;wi<end;wi++){
+      const w=md.walls[wi],w2=md.walls[w.point2];
+      if(!w2)continue;
+      const x1=w.x/XY_SCALE,z1=w.y/XY_SCALE,x2=w2.x/XY_SCALE,z2=w2.y/XY_SCALE;
+      const fy1=zToY(planeZAt(md,sec,false,w.x,w.y));
+      const fy2=zToY(planeZAt(md,sec,false,w2.x,w2.y));
+      const cy1=zToY(planeZAt(md,sec,true,w.x,w.y));
+      const cy2=zToY(planeZAt(md,sec,true,w2.x,w2.y));
+      if(!line([x1,fy1,z1],[x2,fy2,z2],floorColor))break outer;
+      if(!line([x1,cy1,z1],[x2,cy2,z2],ceilingColor))break outer;
+      if(!line([x1,cy1,z1],[x1,fy1,z1],verticalColor))break outer;
+    }
+  }
+  if(pos.length){
+    sectorGuides={
+      pos:makeBuffer(new Float32Array(pos)),
+      col:makeBuffer(new Float32Array(col)),
+      n:pos.length/3
+    };
+  }
+  if(truncated)log(`Sector guide geometry reached the safe ${MAX_SECTOR_GUIDE_VERTICES.toLocaleString("en-US")} vertex limit; remaining guide lines were omitted.`,"warn");
+}
+
 function uploadGroup(g){
   let cx=0,cy=0,cz=0,count=g.pos.length/3;
   for(let i=0;i<g.pos.length;i+=3){cx+=g.pos[i];cy+=g.pos[i+1];cz+=g.pos[i+2];}
@@ -1161,6 +1219,7 @@ function uploadGroup(g){
 }
 function deleteWorld(){
   if(gl) for(const g of worldGroups){ gl.deleteBuffer(g.pos); gl.deleteBuffer(g.uv); gl.deleteBuffer(g.col); }
+  deleteSectorGuides();
   worldGroups=[]; wallSegments=[]; collisionBySector=[]; billboards=[]; cameraFarPlane=MIN_CAMERA_FAR_PLANE;
 }
 // Preallocate reusable buffers/arrays for billboards (no per-frame allocation).
@@ -1776,6 +1835,31 @@ function resizeCanvas(){
   const h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
   if(canvas.width!==w || canvas.height!==h){ canvas.width=w; canvas.height=h; }
 }
+function drawSectorGuides(){
+  if(optTextures.checked||!sectorGuides||!sectorGuides.n)return;
+  gl.disable(gl.BLEND);
+  gl.disable(gl.CULL_FACE);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.depthMask(false);
+  gl.depthFunc(gl.LEQUAL);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,whiteTex.tex);
+  gl.uniform1f(program.uUseTex,0);
+  gl.uniform1f(program.uWrap,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,sectorGuides.pos);
+  gl.enableVertexAttribArray(program.aPos);
+  gl.vertexAttribPointer(program.aPos,3,gl.FLOAT,false,0,0);
+  gl.disableVertexAttribArray(program.aUv);
+  gl.vertexAttrib2f(program.aUv,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,sectorGuides.col);
+  gl.enableVertexAttribArray(program.aColor);
+  gl.vertexAttribPointer(program.aColor,4,gl.FLOAT,false,0,0);
+  gl.lineWidth(1);
+  gl.drawArrays(gl.LINES,0,sectorGuides.n);
+  gl.depthFunc(gl.LESS);
+  gl.depthMask(true);
+}
+
 function drawGroup(g){
   gl.activeTexture(gl.TEXTURE0);
   const tex=optTextures.checked?getDisplayTexture(g.pic,g.pal,g.shade,g.alpha):whiteTex;
@@ -1871,6 +1955,7 @@ function render(){
   for(const g of translucent)drawGroup(g);
   if(optSprites.checked)drawBillboards(true);
   gl.depthMask(true);gl.disable(gl.BLEND);gl.disable(gl.POLYGON_OFFSET_FILL);gl.disable(gl.CULL_FACE);
+  drawSectorGuides();
 
   const mode = cam.noclip ? "noclip" : cam.fly ? "fly" : "walk";
   const locked = document.pointerLockElement===canvas;
@@ -1878,6 +1963,7 @@ function render(){
     `<span class="k">FPS</span> ${fps}   <span class="k">Speed</span> ${moveSpeed.toFixed(1)} m/s<br>`+
     `<span class="k">Mode</span> ${mode}${locked?"":"  (click to look)"}<br>`+
     `<span class="k">Palette</span> ${optMapPalette.checked?"map accurate":"default full-bright"}<br>`+
+    `<span class="k">References</span> ${optTextures.checked?"hidden":"3D sector guides"}<br>`+
     `<span class="k">Sector</span> ${cam.sector} / ${mapData.sectors.length}<br>`+
     `<span class="k">Pos</span> ${cam.x.toFixed(1)}, ${cam.y.toFixed(1)}, ${cam.z.toFixed(1)}<br>`+
     `<span class="k">Sprites</span> ${optSprites.checked?billboards.length:"off"}`;
@@ -1989,7 +2075,7 @@ $("loadBtn").addEventListener("click", async () => {
 });
 
 window.addEventListener("resize",()=>{map2d.dirty=true;});
-optTextures.addEventListener("change",()=>{map2d.dirty=true;});
+optTextures.addEventListener("change",()=>{map2d.dirty=true;updateTextureModeUi(true);});
 optMarkers.addEventListener("change",()=>{map2d.dirty=true;});
 optMapPalette.addEventListener("change",()=>{
   clearMaterialTextureCaches();
@@ -1999,14 +2085,14 @@ optMapPalette.addEventListener("change",()=>{
 
 canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();setLog("WebGL context was lost. Rendering is paused safely; reload the map after the browser restores graphics.");});
 canvas.addEventListener("webglcontextrestored",()=>{
-  gl=null;program=null;whiteTex=null;worldGroups=[];wallSegments=[];collisionBySector=[];billboards=[];
+  gl=null;program=null;whiteTex=null;worldGroups=[];sectorGuides={pos:null,col:null,n:0};wallSegments=[];collisionBySector=[];billboards=[];
   spriteBatch={pos:null,uv:null,col:null,cap:0,fpos:null,fuv:null,fcol:null};
   resources.textures.clear();resources.texturePixels=0;resources.textureBudgetWarned=false;fallbackTextures.clear();reset2DTextureCache();
   try{initGL();if(mapData)buildWorld(mapData).catch(e=>log("WebGL restore failed: "+e.message,"bad"));}
   catch(e){log("WebGL restore failed: "+e.message,"bad");}
 });
 /* ============================ BOOTSTRAP ============================ */
-try{ updatePaletteModeUi(false); initGL(); requestAnimationFrame(loop); }
+try{ updateTextureModeUi(false); updatePaletteModeUi(false); initGL(); requestAnimationFrame(loop); }
 catch(e){ setLog("WebGL init failed: " + e.message); }
 })();
 </script>
