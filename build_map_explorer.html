@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
-<title>BUILD / Mapster32 MAP Explorer — Sprite-Accurate Depth-Stable Build</title>
+<title>BUILD / Mapster32 MAP Explorer — Sprite Orientation Audited Build</title>
 <style>
 /* ---------- Design tokens: a dark "editor console" grounded in BUILD 2D mode ---------- */
 :root{
@@ -229,7 +229,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 "use strict";
 
 /* ============================================================================
-   BUILD / Mapster32 MAP Explorer — sprite-accurate, depth-stable audited material build.
+   BUILD / Mapster32 MAP Explorer — sprite-orientation-accurate, depth-stable audited material build.
 
    This is a static viewer (not EDuke32 in a browser). It parses the classic
    BUILD .MAP format (v7/v8/v9), reconstructs sector/wall/sprite geometry, and
@@ -642,6 +642,7 @@ function spriteFlags(cstat){
   if(cstat & 64) f.push("1-sided");
   if(cstat & 128) f.push("centered");
   if(cstat & 256) f.push("hitscan");
+  if(cstat & 512) f.push("reverse-translucence");
   if(cstat & 32768) f.push("invisible");
   return f.join(", ");
 }
@@ -1004,6 +1005,14 @@ function spriteRenderOffsets(sp){
   if(sp.cstat&8)py=-py;
   return {x:px*Math.max(1,sp.xrepeat)/SPRITE_SCALE,y:py*Math.max(1,sp.yrepeat)/SPRITE_SCALE};
 }
+// Wall-aligned sprites use BUILD's angle as their front-facing normal.
+// At that front face, the -side endpoint is screen-right and therefore
+// receives U=1 in the unflipped case. A generic left-to-right UV assignment
+// mirrors signs and lettering because it ignores that geometric handedness.
+function wallSpriteUCoordinates(cstat){
+  const xflipped=!!(cstat&4);
+  return {minusSide:xflipped?0:1,plusSide:xflipped?1:0};
+}
 function nearestParallelWallPlacement(md,sp,normal,side){
   const sec=md.sectors[sp.sectnum];
   if(!sec||sec.wallptr<0||sec.wallnum<=0)return {x:0,z:0,adjusted:false};
@@ -1108,8 +1117,8 @@ async function buildWorld(md){
     const wx=sp.x/XY_SCALE,wz=sp.y/XY_SCALE,wy=zToY(sp.z),a=sp.ang*Math.PI/1024,normal=[Math.cos(a),Math.sin(a)],side=[-Math.sin(a),Math.cos(a)],uL=(sp.cstat&4)?1:0,uR=(sp.cstat&4)?0:1,vT=(sp.cstat&8)?1:0,vB=(sp.cstat&8)?0:1;
     const opacity=(sp.cstat&2)?((sp.cstat&512)?.33:.67):1,oneSided=!!(sp.cstat&64);
     if(oneSided)spriteStats.oneSided++;
-    const g=grp(sp.picnum,sp.pal,sp.shade,true,false,opacity,STATIC_SPRITE_DEPTH_BIAS,opacity<.999?++translucentSerial:0,oneSided);
     if(orient===32||orient===48){
+      const g=grp(sp.picnum,sp.pal,sp.shade,true,false,opacity,STATIC_SPRITE_DEPTH_BIAS,opacity<.999?++translucentSerial:0,oneSided);
       spriteStats.floor++;if(orient===48)spriteStats.slopedExtension++;
       // BUILD uses the angle as the image Y axis; image X is perpendicular to it.
       const cx=wx+side[0]*xoff+normal[0]*yoff,cz=wz+side[1]*xoff+normal[1]*yoff;
@@ -1125,14 +1134,23 @@ async function buildWorld(md){
       spriteStats.wall++;
       const separation=nearestParallelWallPlacement(md,sp,normal,side);if(separation.adjusted)spriteStats.coplanarAdjusted++;
       const cx=wx+side[0]*xoff+separation.x,cz=wz+side[1]*xoff+separation.z,bottom=(sp.cstat&128)?wy-hm/2-yoff:wy-yoff,top=bottom+hm;
-      quad(g,[cx-side[0]*wm/2,top,cz-side[1]*wm/2],[cx+side[0]*wm/2,top,cz+side[1]*wm/2],[cx+side[0]*wm/2,bottom,cz+side[1]*wm/2],[cx-side[0]*wm/2,bottom,cz-side[1]*wm/2],[[uL,vT],[uR,vT],[uR,vB],[uL,vB]]);
+      const q0=[cx-side[0]*wm/2,top,cz-side[1]*wm/2],q1=[cx+side[0]*wm/2,top,cz+side[1]*wm/2],q2=[cx+side[0]*wm/2,bottom,cz+side[1]*wm/2],q3=[cx-side[0]*wm/2,bottom,cz-side[1]*wm/2];
+      const wallU=wallSpriteUCoordinates(sp.cstat);
+      // Static wall sprites are submitted with back-face culling. A two-sided
+      // sprite gets an explicit reverse-winding back face with independent UV
+      // handedness, so text is readable from either side instead of mirrored.
+      const g=grp(sp.picnum,sp.pal,sp.shade,true,false,opacity,STATIC_SPRITE_DEPTH_BIAS,opacity<.999?++translucentSerial:0,true);
+      quad(g,q0,q1,q2,q3,[[wallU.minusSide,vT],[wallU.plusSide,vT],[wallU.plusSide,vB],[wallU.minusSide,vB]]);
+      if(!oneSided){
+        quad(g,q1,q0,q3,q2,[[wallU.minusSide,vT],[wallU.plusSide,vT],[wallU.plusSide,vB],[wallU.minusSide,vB]]);
+      }
     }
   }
   worldGroups=[];let gi=0;for(const g of groups.values()){const up=uploadGroup(g);if(up.n>0)worldGroups.push(up);if((++gi&31)===0)await nextFrame();}
   updateCameraFarPlane(md);
   allocSpriteBatch(billboards.length);
   log(`Geometry built: ${worldGroups.length} material groups, ${wallSegments.length} collision segments, ${billboards.length} billboards, ${spriteStats.wall+spriteStats.floor} static sprites.`,"ok");
-  if(spriteStats.wall||spriteStats.floor)log(`Static sprite fidelity: ${spriteStats.wall} wall-aligned, ${spriteStats.floor} floor-aligned, ${spriteStats.oneSided} one-sided; ${spriteStats.coplanarAdjusted} coplanar wall ornament(s) separated safely.`,"ok");
+  if(spriteStats.wall||spriteStats.floor)log(`Static sprite fidelity: ${spriteStats.wall} wall-aligned, ${spriteStats.floor} floor-aligned, ${spriteStats.oneSided} one-sided; ${spriteStats.coplanarAdjusted} coplanar wall ornament(s) separated safely; wall-sprite handedness verified.`,"ok");
   if(spriteStats.slopedExtension)log(`${spriteStats.slopedExtension} sprite(s) use the cstat 48 sloped-sprite extension; their base rotation is preserved, but game-specific slope metadata may require EDuke32.`,"warn");
 }
 function uploadGroup(g){
