@@ -138,7 +138,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
 <div id="panel">
   <div id="panelHead">
     <h1><span>BUILD</span> / Mapster32 MAP Explorer</h1>
-    <p>Lightweight WebGL viewer for Duke Nukem 3D <b>.MAP</b> files. Optionally load <b>DUKE3D.GRP</b> or matching <b>ART + PALETTE.DAT + LOOKUP.DAT</b> resources for BUILD-accurate textures, shades and palette swaps.</p>
+    <p>Lightweight WebGL viewer for BUILD engine <b>.MAP</b> files (Duke Nukem 3D, Shadow Warrior and other BUILD games, v7/v8/v9). Optionally load the matching game <b>GRP</b> or loose <b>ART + PALETTE.DAT + LOOKUP.DAT</b> resources for BUILD-accurate textures, shades and palette swaps.</p>
   </div>
 
   <div id="tabs">
@@ -209,6 +209,7 @@ select{width:100%;background:#0e131f;color:var(--ink);border:1px solid var(--edg
   <span class="key">WASD</span> move ·
   <span class="key">Mouse</span> look ·
   <span class="key">Shift</span> run ·
+  <span class="key">1·2·3</span> speed ·
   <span class="key">F</span> fly ·
   <span class="key">N</span> noclip (through walls) ·
   <span class="key">Space/Ctrl</span> up/down ·
@@ -259,6 +260,12 @@ const STEP_HEIGHT   = 0.45;     // Max auto-step height when walking.
 const MIN_CLEARANCE = 1.25;     // Min ceiling clearance to enter a sector.
 const WALK_SPEED    = 4.2;      // Metres/second walking.
 const RUN_MULT      = 1.9;      // Run multiplier.
+const SPEED_MIN     = 1.2;      // Slowest allowed movement speed (m/s).
+const SPEED_MAX     = 40;       // Fastest allowed movement speed (m/s).
+// Movement speed presets on keys 1/2/3: careful inspection, normal walking and a
+// fast preset that stays fully controllable (Shift still multiplies by RUN_MULT).
+const SPEED_PRESETS = {Digit1:2.2, Digit2:WALK_SPEED, Digit3:9.5,
+                       Numpad1:2.2, Numpad2:WALK_SPEED, Numpad3:9.5};
 const MAX_DRAW_DIST = 1400;     // Far clip in metres.
 const SPRITE_CULL2  = 200 * 200;// Squared metre distance to skip billboards.
 const MAX_MAP_BYTES   = 64 * 1024 * 1024;
@@ -382,7 +389,7 @@ function parseMap(buffer){
   }
 
   const numsprites = r.u16();
-  if(numsprites < 0 || numsprites > 16384) throw new Error("Invalid sprite count: " + numsprites);
+  if(numsprites > 16384) throw new Error("Invalid sprite count: " + numsprites);
   const sprites = [];
   for(let i=0;i<numsprites;i++){
     sprites.push({
@@ -965,7 +972,6 @@ function solidTexture(rgba){
   return {tex:t,w:1,h:1,real:false};
 }
 function makeBuffer(data, usage){ const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,data,usage||gl.STATIC_DRAW); return b; }
-const isPOT = v => v>0 && (v & (v-1))===0;
 
 /* ============================ 7. TEXTURES ============================ */
 function getTexture(pic,pal=0,shade=0,alpha=false){
@@ -1033,27 +1039,32 @@ let spriteBatch = {pos:null,uv:null,col:null,cap:0,fpos:null,fuv:null,fcol:null}
 const shadeColor = shade => { const v = clamp(1 - (shade||0)/44, 0.20, 1.35); return [v,v,v,1]; };
 const zToY = z => -z / Z_SCALE;                 // BUILD z (down) -> world y (up)
 
-function wallSource(md,w,lower){
-  if(lower&&(w.cstat&2)&&w.nextwall>=0&&w.nextwall<md.walls.length)return md.walls[w.nextwall];
+// Bottom pieces of two-sided walls with cstat bit 1 (value 2) borrow the texture,
+// panning, repeats and flags of the wall on the other side of the red line.
+function wallSource(md,w){
+  if((w.cstat&2)&&w.nextwall>=0&&w.nextwall<md.walls.length)return md.walls[w.nextwall];
   return w;
 }
-function wallUVQuad(md,ownerSec,w,source,pic,zTop1,zTop2,zBot1,zBot2){
+// Classic BUILD wall texture mapping. `ref` is the pegging anchor Z chosen by the
+// caller from the original engine rules (wall kind + cstat bit 4). U spans exactly
+// xrepeat*8 texels along the wall, Y panning is measured over the next power-of-two
+// tile height, and cstat 256 mirrors the texture around the anchor before panning
+// is applied — matching how the engine negates only the V scale, never the panning.
+// Anchors intentionally use the flat base Z of each sector: the classic renderer
+// pegs wall textures to ceilingz/floorz even beside sloped surfaces, so texture
+// rows stay horizontal instead of shearing along the slope.
+function wallUVQuad(w,source,pic,ref,zTop1,zTop2,zBot1,zBot2){
   const size=tileSize(pic),reverse=source!==w;
   let u0=source.xpanning,u1=source.xpanning+Math.max(1,source.xrepeat)*8;
   if(reverse){const t=u0;u0=u1;u1=t;}if(source.cstat&8){const t=u0;u0=u1;u1=t;}
   u0/=Math.max(1,size.w);u1/=Math.max(1,size.w);
-  let anchorSec=ownerSec;
-  if(source!==w&&source.nextsector>=0&&source.nextsector<md.sectors.length)anchorSec=md.sectors[source.nextsector];
-  const topAnchor1=planeZAt(md,anchorSec,true,w.x,w.y),topAnchor2=planeZAt(md,anchorSec,true,md.walls[w.point2].x,md.walls[w.point2].y);
-  const floorAnchor1=planeZAt(md,anchorSec,false,w.x,w.y),floorAnchor2=planeZAt(md,anchorSec,false,md.walls[w.point2].x,md.walls[w.point2].y);
-  const pan=source.ypanning*nextPowerOfTwo(size.h)/256,yr=Math.max(1,source.yrepeat)/2048;
-  const v=(z,topA,floorA)=>{
-    let q=((source.cstat&4)?(z-floorA):(z-topA))*yr+pan;
+  const pan=source.ypanning*nextPowerOfTwo(size.h)/256,yr=Math.max(1,source.yrepeat)/2048,h=Math.max(1,size.h);
+  const v=z=>{
+    let q=(z-ref)*yr;
     if(source.cstat&256)q=-q;
-    return q/Math.max(1,size.h);
+    return (q+pan)/h;
   };
-  return [[u0,v(zTop1,topAnchor1,floorAnchor1)],[u1,v(zTop2,topAnchor2,floorAnchor2)],
-          [u1,v(zBot2,topAnchor2,floorAnchor2)],[u0,v(zBot1,topAnchor1,floorAnchor1)]];
+  return [[u0,v(zTop1)],[u1,v(zTop2)],[u1,v(zBot2)],[u0,v(zBot1)]];
 }
 function spriteRenderOffsets(sp){
   const art=tileOffsets(sp.picnum);
@@ -1177,26 +1188,42 @@ async function buildWorld(md){
       const cc1=planeZAt(md,sec,true,w.x,w.y),cc2=planeZAt(md,sec,true,w2.x,w2.y),ff1=planeZAt(md,sec,false,w.x,w.y),ff2=planeZAt(md,sec,false,w2.x,w2.y);
       const c1=zToY(cc1),c2=zToY(cc2),f1=zToY(ff1),f2=zToY(ff2),solid=w.nextsector<0||w.nextsector>=md.sectors.length;
       if(solid){
-        const sw=wallSource(md,w,false),g=grp(sw.picnum,sw.pal,sw.shade,false,true);
-        quad(g,[x1,c1,z1],[x2,c2,z2],[x2,f2,z2],[x1,f1,z1],wallUVQuad(md,sec,w,sw,sw.picnum,cc1,cc2,ff1,ff2));
+        const g=grp(w.picnum,w.pal,w.shade,false,true);
+        // Classic pegging: one-sided walls anchor at their own ceiling; cstat bit 4
+        // ("align bottom", the Mapster32 [O] key) re-anchors them at their own floor.
+        const ref=(w.cstat&4)?sec.floorz:sec.ceilingz;
+        quad(g,[x1,c1,z1],[x2,c2,z2],[x2,f2,z2],[x1,f1,z1],wallUVQuad(w,w,w.picnum,ref,cc1,cc2,ff1,ff2));
       }else{
         const ns=md.sectors[w.nextsector],ncc1=planeZAt(md,ns,true,w.x,w.y),ncc2=planeZAt(md,ns,true,w2.x,w2.y),nff1=planeZAt(md,ns,false,w.x,w.y),nff2=planeZAt(md,ns,false,w2.x,w2.y);
         const nc1=zToY(ncc1),nc2=zToY(ncc2),nf1=zToY(nff1),nf2=zToY(nff2);
         if(ncc1>cc1+1e-5||ncc2>cc2+1e-5){
-          const sw=wallSource(md,w,false),g=grp(sw.picnum,sw.pal,sw.shade,false,true);
-          quad(g,[x1,c1,z1],[x2,c2,z2],[x2,nc2,z2],[x1,nc1,z1],wallUVQuad(md,sec,w,sw,sw.picnum,cc1,cc2,ncc1,ncc2));
+          const g=grp(w.picnum,w.pal,w.shade,false,true);
+          // Top pieces anchor at the neighbour sector's ceiling (so their texture
+          // rides classic BUILD doors); bit 4 re-anchors at this sector's ceiling.
+          const ref=(w.cstat&4)?sec.ceilingz:ns.ceilingz;
+          quad(g,[x1,c1,z1],[x2,c2,z2],[x2,nc2,z2],[x1,nc1,z1],wallUVQuad(w,w,w.picnum,ref,cc1,cc2,ncc1,ncc2));
         }
         if(nff1<ff1-1e-5||nff2<ff2-1e-5){
-          const sw=wallSource(md,w,true),g=grp(sw.picnum,sw.pal,sw.shade,false,true);
-          quad(g,[x1,nf1,z1],[x2,nf2,z2],[x2,f2,z2],[x1,f1,z1],wallUVQuad(md,sec,w,sw,sw.picnum,nff1,nff2,ff1,ff2));
+          const sw=wallSource(md,w),g=grp(sw.picnum,sw.pal,sw.shade,false,true);
+          // Bottom pieces anchor at the neighbour sector's floor; bit 4 re-anchors
+          // them at this sector's ceiling — the classic engine quirk, kept intact.
+          const ref=(sw.cstat&4)?sec.ceilingz:ns.floorz;
+          quad(g,[x1,nf1,z1],[x2,nf2,z2],[x2,f2,z2],[x1,f1,z1],wallUVQuad(w,sw,sw.picnum,ref,nff1,nff2,ff1,ff2));
         }
         if(w.cstat&(16|32)){
           const pic=w.overpicnum>=0?w.overpicnum:w.picnum,top1=Math.max(cc1,ncc1),top2=Math.max(cc2,ncc2),bot1=Math.min(ff1,nff1),bot2=Math.min(ff2,nff2);
           if(top1<bot1||top2<bot2){
             const opacity=(w.cstat&128)?((w.cstat&512)?.33:.67):1;
             const n=wallInteriorNormal(md,si,w,w2),ox=n[0]*MASKED_WALL_SEPARATION,oz=n[1]*MASKED_WALL_SEPARATION;
-            const g=grp(pic,w.pal,w.shade,true,true,opacity,0,opacity<.999?++translucentSerial:0);
-            quad(g,[x1+ox,zToY(top1),z1+oz],[x2+ox,zToY(top2),z2+oz],[x2+ox,zToY(bot2),z2+oz],[x1+ox,zToY(bot1),z1+oz],wallUVQuad(md,sec,w,w,pic,top1,top2,bot1,bot2));
+            // Masked/one-way pieces anchor at the top of the opening (max ceiling),
+            // or at its bottom (min floor) with bit 4 — as in classic drawmaskwall.
+            const ref=(w.cstat&4)?Math.min(sec.floorz,ns.floorz):Math.max(sec.ceilingz,ns.ceilingz);
+            const uvq=wallUVQuad(w,w,pic,ref,top1,top2,bot1,bot2);
+            // As in the game, each side of a red line draws its own mask, visible
+            // only from its owner sector: submit one-sided with reversed winding so
+            // the culled front face points into the sector interior.
+            const g=grp(pic,w.pal,w.shade,true,true,opacity,0,opacity<.999?++translucentSerial:0,true);
+            quad(g,[x2+ox,zToY(top2),z2+oz],[x1+ox,zToY(top1),z1+oz],[x1+ox,zToY(bot1),z1+oz],[x2+ox,zToY(bot2),z2+oz],[uvq[1],uvq[0],uvq[3],uvq[2]]);
           }
         }
       }
@@ -1478,6 +1505,12 @@ document.addEventListener("keydown", e => {
   if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   if(e.code === "Tab") e.preventDefault();
   keys.add(e.code);
+  if(e.repeat) return;                       // toggles and presets fire once per press
+  if(SPEED_PRESETS[e.code]!==undefined){
+    moveSpeed=clamp(SPEED_PRESETS[e.code],SPEED_MIN,SPEED_MAX);
+    log(`Speed preset ${e.code.slice(-1)}: ${moveSpeed.toFixed(1)} m/s (Shift runs at ${(moveSpeed*RUN_MULT).toFixed(1)} m/s).`,"info");
+    return;
+  }
   if(e.code==="KeyV"){ e.preventDefault(); setViewMode(viewMode==="3d"?"2d":"3d"); return; }
   if(e.code==="KeyF"){ cam.fly=!cam.fly; if(!cam.fly) cam.noclip=false; }
   if(e.code==="KeyN"){ cam.noclip=!cam.noclip; if(cam.noclip) cam.fly=true; }
@@ -1492,7 +1525,7 @@ document.addEventListener("mousemove", e => {
   cam.yaw   += e.movementX * 0.0022;
   cam.pitch  = clamp(cam.pitch - e.movementY*0.0022, -1.5, 1.5);
 });
-canvas.addEventListener("wheel", e => { moveSpeed = clamp(moveSpeed * (e.deltaY<0?1.12:0.9), 1.2, 40); e.preventDefault(); }, {passive:false});
+canvas.addEventListener("wheel", e => { moveSpeed = clamp(moveSpeed * (e.deltaY<0?1.12:0.9), SPEED_MIN, SPEED_MAX); e.preventDefault(); }, {passive:false});
 
 function resetCamera(){
   if(!mapData) return;
@@ -1608,7 +1641,6 @@ function pointInSector(x,y,si){
   const b=sec.bbox;if(b&&(x<b.minx||x>b.maxx||y<b.miny||y>b.maxy))return false;
   return pointInSectorData(mapData,x,y,si);
 }
-function inLoop(x,y,loop){return inLoopData(mapData,x,y,loop);}
 function blocksAt(x,y,sector){
   const r = PLAYER_RADIUS*XY_SCALE;
   const cand = new Set([sector,cam.sector]);
@@ -1752,7 +1784,8 @@ const buildTo2D=(x,y)=>({x:map2dCv.width/2+(x-map2d.centerX)*map2d.zoom,y:map2dC
 const screenTo2D=(x,y)=>({x:map2d.centerX+(x-map2dCv.width/2)/map2d.zoom,y:map2d.centerY+(y-map2dCv.height/2)/map2d.zoom});
 function update2DControls(dt){
   const fast=(keys.has("ShiftLeft")||keys.has("ShiftRight"))?4:1;
-  const amount=700*fast*dt/Math.max(map2d.zoom,1e-6); let changed=false;
+  const presetScale=clamp(moveSpeed/WALK_SPEED,.5,2.5);   // keys 1/2/3 also pace the 2D pan
+  const amount=700*fast*presetScale*dt/Math.max(map2d.zoom,1e-6); let changed=false;
   if(keys.has("KeyA")||keys.has("ArrowLeft")){map2d.centerX-=amount;changed=true;}
   if(keys.has("KeyD")||keys.has("ArrowRight")){map2d.centerX+=amount;changed=true;}
   if(keys.has("KeyW")||keys.has("ArrowUp")){map2d.centerY-=amount;changed=true;}
@@ -2100,6 +2133,7 @@ function downloadBlob(name,blob){const url=URL.createObjectURL(blob),a=document.
 function usedTileSet(md){const x=new Set();for(const s of md.sectors){x.add(s.floorpicnum);x.add(s.ceilingpicnum);}for(const w of md.walls){x.add(w.picnum);if((w.cstat&(16|32))&&w.overpicnum>=0)x.add(w.overpicnum);}for(const sp of md.sprites)x.add(sp.picnum);return x;}
 function reportRenderFidelity(md){
   log("BUILD floor/ceiling UV mapping and flat-sprite pivots are active (relative alignment, flips, NPOT panning and texture-half scaling).","ok");
+  log("Classic wall pegging is active: top pieces anchor at the neighbour ceiling, bottom pieces at the neighbour floor, cstat bit 4 re-anchors as in the original engine, and masked/one-way walls render per side exactly like the game.","ok");
   const multiLoop=md.sectors.filter(sec=>sec.loops&&sec.loops.length>1).length;
   if(multiLoop)log(`${multiLoop} sector(s) contain inner or nested loops; floors and ceilings are triangulated with real holes.`,"ok");
   const used=usedTileSet(md),missing=[...used].filter(n=>n>=0&&!resources.tiles.has(n)),pals=new Set();
@@ -2149,7 +2183,7 @@ $("loadBtn").addEventListener("click", async () => {
     if(viewMode==="2d") fit2DMap();
     map2d.dirty=true;
     log(`Integrity check: ${mapData.validation.errors} error(s), ${mapData.validation.warnings} warning(s).`,mapData.validation.errors?"bad":mapData.validation.warnings?"warn":"ok");
-    log("Done. Use V or the view button for the full textured 2D mode.", "ok");
+    log("Done. Keys 1/2/3 set movement speed; V or the view button opens the full textured 2D mode.", "ok");
     canvas.focus();
   } catch(e){
     deleteWorld();mapData=null;mapStats=null;miniT=null;miniWrap.classList.add("hidden");
