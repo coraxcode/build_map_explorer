@@ -166,6 +166,7 @@ input[type=range]{width:100%;height:22px;margin:0;background:transparent;accent-
     </div>
     <div class="opts">
       <label class="opt"><input id="optTextures" type="checkbox" checked> Textures</label>
+      <label class="opt"><input id="optCeilings" type="checkbox" checked title="Uncheck to hide all ceilings and look into the map from above in the 3D view"> Ceilings</label>
       <label class="opt"><input id="optSprites" type="checkbox" checked> Sprites</label>
       <label class="opt"><input id="optCollision" type="checkbox" checked> Collision</label>
       <label class="opt"><input id="optMarkers" type="checkbox"> Editor markers</label>
@@ -311,6 +312,7 @@ const hudEl    = $("hud");
 const logEl    = $("log");
 const panelEl  = $("panel");
 const optTextures  = $("optTextures");
+const optCeilings  = $("optCeilings");
 const optSprites   = $("optSprites");
 const optCollision = $("optCollision");
 const optMarkers   = $("optMarkers");
@@ -1163,14 +1165,14 @@ async function buildWorld(md){
   deleteWorld();triangulationBudgetWarned=false;wallSegments=[];collisionBySector=Array.from({length:md.sectors.length},()=>[]);billboards=[];
   const spriteStats={wall:0,floor:0,oneSided:0,coplanarAdjusted:0,slopedExtension:0};
   const groups=new Map();let translucentSerial=0;
-  const grp=(pic,pal,shade,alpha=false,wrap=true,opacity=1,depthBias=0,sortId=0,oneSided=false)=>{
+  const grp=(pic,pal,shade,alpha=false,wrap=true,opacity=1,depthBias=0,sortId=0,oneSided=false,isCeiling=false)=>{
     const translucent=opacity<0.999;
-    const k=`${pic|0}:${pal|0}:${shade|0}:${alpha?1:0}:${wrap?1:0}:${opacity}:${depthBias}:${oneSided?1:0}:${translucent?sortId:0}`;
+    const k=`${pic|0}:${pal|0}:${shade|0}:${alpha?1:0}:${wrap?1:0}:${opacity}:${depthBias}:${oneSided?1:0}:${isCeiling?1:0}:${translucent?sortId:0}`;
     if(!groups.has(k)){
       if(groups.size>=MAX_MATERIAL_GROUPS)throw new Error(`Map requires more than ${MAX_MATERIAL_GROUPS} material groups; rendering stopped safely.`);
       const tex=getTexture(pic,pal,shade,alpha);
       const base=[1,1,1,opacity];
-      groups.set(k,{pic:pic|0,pal:pal|0,shade:shade|0,alpha:!!alpha,wrap:!!wrap,opacity,depthBias,oneSided:!!oneSided,tex,pos:[],uv:[],col:[],base});
+      groups.set(k,{pic:pic|0,pal:pal|0,shade:shade|0,alpha:!!alpha,wrap:!!wrap,opacity,depthBias,oneSided:!!oneSided,isCeiling:!!isCeiling,tex,pos:[],uv:[],col:[],base});
     }
     return groups.get(k);
   };
@@ -1187,7 +1189,7 @@ async function buildWorld(md){
         tri(grp(sec.floorpicnum,sec.floorpal,sec.floorshade,false,true),fv[0],fv[1],fv[2],fuv[0],fuv[1],fuv[2]);
         const o=[t[2],t[1],t[0]],cv=o.map(i=>[pts[i].x/XY_SCALE,zToY(planeZAt(md,sec,true,pts[i].x,pts[i].y)),pts[i].y/XY_SCALE]);
         const cuv=o.map(i=>surfaceUV(md,sec,true,sec.ceilingpicnum,pts[i].x,pts[i].y));
-        tri(grp(sec.ceilingpicnum,sec.ceilingpal,sec.ceilingshade,false,true),cv[0],cv[1],cv[2],cuv[0],cuv[1],cuv[2]);
+        tri(grp(sec.ceilingpicnum,sec.ceilingpal,sec.ceilingshade,false,true,1,0,0,false,true),cv[0],cv[1],cv[2],cuv[0],cuv[1],cuv[2]);
       }
     }
     for(let wi=sec.wallptr;wi<sec.wallptr+sec.wallnum;wi++){
@@ -1344,7 +1346,7 @@ function uploadGroup(g){
   let cx=0,cy=0,cz=0,count=g.pos.length/3;
   for(let i=0;i<g.pos.length;i+=3){cx+=g.pos[i];cy+=g.pos[i+1];cz+=g.pos[i+2];}
   if(count){cx/=count;cy/=count;cz/=count;}
-  return {pic:g.pic,pal:g.pal,shade:g.shade,alpha:g.alpha,wrap:g.wrap,opacity:g.opacity,depthBias:g.depthBias||0,oneSided:!!g.oneSided,center:[cx,cy,cz],n:count,pos:makeBuffer(new Float32Array(g.pos)),uv:makeBuffer(new Float32Array(g.uv)),col:makeBuffer(new Float32Array(g.col)),tex:g.tex};
+  return {pic:g.pic,pal:g.pal,shade:g.shade,alpha:g.alpha,wrap:g.wrap,opacity:g.opacity,depthBias:g.depthBias||0,oneSided:!!g.oneSided,isCeiling:!!g.isCeiling,center:[cx,cy,cz],n:count,pos:makeBuffer(new Float32Array(g.pos)),uv:makeBuffer(new Float32Array(g.uv)),col:makeBuffer(new Float32Array(g.col)),tex:g.tex};
 }
 function deleteWorld(){
   if(gl) for(const g of worldGroups){ gl.deleteBuffer(g.pos); gl.deleteBuffer(g.uv); gl.deleteBuffer(g.col); }
@@ -1561,6 +1563,20 @@ document.addEventListener("keydown", e => {
 });
 document.addEventListener("keyup", e => keys.delete(e.code));
 canvas.addEventListener("click", () => { if(viewMode!=="3d") return; canvas.focus(); if(canvas.requestPointerLock) canvas.requestPointerLock(); });
+
+/* Browsers reserve tab-closing shortcuts (Ctrl+W / Cmd+W) and never let pages
+   block them — an accidental press while holding W to run closes the tab
+   instantly. The only sanctioned protection is a leave-confirmation prompt,
+   scoped tightly: it is armed only while the pointer is locked to the 3D view
+   (plus a 2-second grace period after unlocking), so normal closing of the
+   page is never nagged. */
+let pointerLockGuardUntil = 0;
+document.addEventListener("pointerlockchange", () => {
+  pointerLockGuardUntil = (document.pointerLockElement === canvas) ? Infinity : performance.now() + 2000;
+});
+window.addEventListener("beforeunload", e => {
+  if(mapData && performance.now() < pointerLockGuardUntil){ e.preventDefault(); e.returnValue = ""; }
+});
 document.addEventListener("mousemove", e => {
   if(document.pointerLockElement !== canvas) return;
   cam.yaw   += e.movementX * 0.0022;
@@ -2108,10 +2124,13 @@ function render(){
   gl.uniform1i(program.uTex,0);
 
   gl.depthMask(true);gl.disable(gl.BLEND);
-  for(const g of worldGroups)if(g.opacity>=.999)drawGroup(g);
+  // Hiding ceilings only filters their dedicated material groups at draw time, so
+  // the toggle is instant and never touches geometry, buffers or texture memory.
+  const hideCeilings=!!(optCeilings&&!optCeilings.checked);
+  for(const g of worldGroups){if(g.opacity<.999)continue;if(hideCeilings&&g.isCeiling)continue;drawGroup(g);}
   if(optSprites.checked)drawBillboards(false);
 
-  const translucent=worldGroups.filter(g=>g.opacity<.999).sort((a,b)=>{
+  const translucent=worldGroups.filter(g=>g.opacity<.999&&!(hideCeilings&&g.isCeiling)).sort((a,b)=>{
     const ad=(a.center[0]-cam.x)**2+(a.center[1]-cam.y)**2+(a.center[2]-cam.z)**2;
     const bd=(b.center[0]-cam.x)**2+(b.center[1]-cam.y)**2+(b.center[2]-cam.z)**2;return bd-ad;
   });
