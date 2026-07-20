@@ -171,6 +171,7 @@ input[type=range]{width:100%;height:22px;margin:0;background:transparent;accent-
       <label class="opt"><input id="optCollision" type="checkbox" checked> Collision</label>
       <label class="opt"><input id="optMarkers" type="checkbox"> Editor markers</label>
       <label class="opt"><input id="optMapPalette" type="checkbox" checked> Map palette & lighting</label>
+      <label class="opt"><input id="optArrowKeys" type="checkbox" title="Move with the arrow keys (↑↓←→) instead of W/A/S/D. Avoids the browser's Ctrl+W tab-close shortcut."> Arrow keys move (↑↓←→)</label>
     </div>
     <p class="hint" id="textureModeHint">Textures enabled. Disable them to inspect the map with automatic 3D sector guide lines.</p>
     <p class="hint" id="paletteModeHint">Enabled: use the map's configured palette swaps and darkness. Disable for the default palette at full brightness while inspecting dark areas.</p>
@@ -219,7 +220,7 @@ input[type=range]{width:100%;height:22px;margin:0;background:transparent;accent-
 <div id="hud">No map loaded.</div>
 <div id="help">
   <span class="key">Click</span> lock mouse ·
-  <span class="key">WASD</span> move ·
+  <span class="key">WASD / ↑↓←→</span> move ·
   <span class="key">Mouse</span> look ·
   <span class="key">Shift</span> run ·
   <span class="key">Wheel</span> speed ·
@@ -280,7 +281,9 @@ const SPRITE_CULL2  = 200 * 200;// Squared metre distance to skip billboards.
 const MAX_MAP_BYTES   = 64 * 1024 * 1024;
 const MAX_RESOURCE_BYTES = 256 * 1024 * 1024;
 const MAX_TILE_PIXELS = 4 * 1024 * 1024;
-const MAX_TEXTURE_PIXELS_TOTAL = 32 * 1024 * 1024;
+const MAX_TEXTURE_PIXELS_TOTAL = 16 * 1024 * 1024; // ~64 MB texture budget; safer on integrated GPUs.
+const MAX_FRAMEBUFFER_PIXELS = 4 * 1024 * 1024;    // Cap the drawing buffer (~2896x1448) so 4K/high-DPI
+                                                   // displays at 2x cannot exhaust GPU memory and crash.
 const LIST_PAGE_SIZE  = 80;
 const MAX_2D_TEXTURED_SECTORS = 1200;
 const MAX_2D_TEXTURED_SPRITES = 500;
@@ -317,6 +320,7 @@ const optSprites   = $("optSprites");
 const optCollision = $("optCollision");
 const optMarkers   = $("optMarkers");
 const optMapPalette= $("optMapPalette");
+const optArrowKeys = $("optArrowKeys");
 const textureModeHint = $("textureModeHint");
 const paletteModeHint = $("paletteModeHint");
 const resolutionSel= $("resolution");
@@ -926,6 +930,7 @@ function parseArt(buffer, name){
 
 /* ============================ WEBGL SETUP ============================ */
 let gl=null, program=null, whiteTex=null;
+let glLost=false;   // true while the WebGL context is lost; pauses all GL work safely.
 let fallbackTextures = new Map();
 
 const VS = `
@@ -1552,6 +1557,8 @@ document.addEventListener("keydown", e => {
   // Ignore shortcuts/movement while typing in a filter or select.
   if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   if(e.code === "Tab") e.preventDefault();
+  // In 3D with arrow-move enabled, keep the arrows from scrolling the page.
+  if(viewMode==="3d" && optArrowKeys && optArrowKeys.checked && e.code.startsWith("Arrow")) e.preventDefault();
   keys.add(e.code);
   if(e.repeat) return;                       // toggle keys fire once per press
   if(e.code==="KeyV"){ e.preventDefault(); setViewMode(viewMode==="3d"?"2d":"3d"); return; }
@@ -1562,6 +1569,12 @@ document.addEventListener("keydown", e => {
   if(e.code==="Tab")  panelEl.classList.toggle("hidden");
 });
 document.addEventListener("keyup", e => keys.delete(e.code));
+// If the window loses focus, is hidden, or a modal dialog steals focus (e.g. the
+// browser's "Leave site?" prompt after Ctrl+W), key-up events never arrive and the
+// camera would keep moving on its own. Dropping every held key on focus loss fixes it.
+const clearHeldKeys = () => keys.clear();
+window.addEventListener("blur", clearHeldKeys);
+document.addEventListener("visibilitychange", () => { if(document.hidden) clearHeldKeys(); });
 canvas.addEventListener("click", () => { if(viewMode!=="3d") return; canvas.focus(); if(canvas.requestPointerLock) canvas.requestPointerLock(); });
 
 /* Browsers reserve tab-closing shortcuts (Ctrl+W / Cmd+W) and never let pages
@@ -1573,6 +1586,7 @@ canvas.addEventListener("click", () => { if(viewMode!=="3d") return; canvas.focu
 let pointerLockGuardUntil = 0;
 document.addEventListener("pointerlockchange", () => {
   pointerLockGuardUntil = (document.pointerLockElement === canvas) ? Infinity : performance.now() + 2000;
+  if(document.pointerLockElement !== canvas) keys.clear();   // stop movement when leaving the 3D view
 });
 window.addEventListener("beforeunload", e => {
   if(mapData && performance.now() < pointerLockGuardUntil){ e.preventDefault(); e.returnValue = ""; }
@@ -1633,10 +1647,14 @@ function update(dt){
   const right = [Math.cos(cam.yaw+Math.PI/2), 0, Math.sin(cam.yaw+Math.PI/2)];
 
   let mx=0,my=0,mz=0;
-  if(keys.has("KeyW")){ mx+=fwd[0]; my+=fwd[1]; mz+=fwd[2]; }
-  if(keys.has("KeyS")){ mx-=fwd[0]; my-=fwd[1]; mz-=fwd[2]; }
-  if(keys.has("KeyD")){ mx+=right[0]; mz+=right[2]; }
-  if(keys.has("KeyA")){ mx-=right[0]; mz-=right[2]; }
+  // When "Arrow keys move" is on, the arrows replace W/A/S/D for 3D movement so the
+  // player never needs to press W (avoiding an accidental Ctrl+W that closes the tab).
+  const useArrows = !!(optArrowKeys && optArrowKeys.checked);
+  const kF=useArrows?"ArrowUp":"KeyW", kB=useArrows?"ArrowDown":"KeyS", kL=useArrows?"ArrowLeft":"KeyA", kR=useArrows?"ArrowRight":"KeyD";
+  if(keys.has(kF)){ mx+=fwd[0]; my+=fwd[1]; mz+=fwd[2]; }
+  if(keys.has(kB)){ mx-=fwd[0]; my-=fwd[1]; mz-=fwd[2]; }
+  if(keys.has(kR)){ mx+=right[0]; mz+=right[2]; }
+  if(keys.has(kL)){ mx-=right[0]; mz-=right[2]; }
   const len=Math.hypot(mx,my,mz);
   if(len>0){ mx=mx/len*speed; my=my/len*speed; mz=mz/len*speed; }
 
@@ -1762,14 +1780,26 @@ function drawMinimap(){
   const c = miniCv.getContext("2d"), W=miniCv.width, H=miniCv.height;
   c.clearRect(0,0,W,H); c.fillStyle="#04060a"; c.fillRect(0,0,W,H);
 
-  // Walls: two-sided dim cyan, one-sided bright cyan.
+  // Walls: two batched paths (one stroke() per colour) instead of one stroke per
+  // wall. On large maps this turns ~2000 Canvas2D calls per frame into 2, which
+  // keeps the minimap from dominating the CPU while navigating.
   c.lineWidth=1;
+  c.strokeStyle="rgba(63,217,200,.22)"; c.beginPath();      // two-sided (dim)
   for(const w of mapData.walls){
+    if(w.nextsector<0) continue;
     const w2=mapData.walls[w.point2]; if(!w2) continue;
     const a=miniPt(w.x,w.y), b=miniPt(w2.x,w2.y);
-    c.strokeStyle = w.nextsector<0 ? "rgba(63,217,200,.85)" : "rgba(63,217,200,.22)";
-    c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
+    c.moveTo(a.x,a.y); c.lineTo(b.x,b.y);
   }
+  c.stroke();
+  c.strokeStyle="rgba(63,217,200,.85)"; c.beginPath();      // one-sided (bright)
+  for(const w of mapData.walls){
+    if(w.nextsector>=0) continue;
+    const w2=mapData.walls[w.point2]; if(!w2) continue;
+    const a=miniPt(w.x,w.y), b=miniPt(w2.x,w2.y);
+    c.moveTo(a.x,a.y); c.lineTo(b.x,b.y);
+  }
+  c.stroke();
   // Sprites: coloured dots by category.
   for(const sp of mapData.sprites){
     if(sp.cstat & 32768) continue;
@@ -2011,8 +2041,17 @@ function refreshPanels(){
 function resizeCanvas(){
   const maxDpr = parseFloat(resolutionSel.value||"1");
   const dpr = Math.min(maxDpr, window.devicePixelRatio||1);
-  const w = Math.max(1, Math.floor(canvas.clientWidth*dpr));
-  const h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
+  let w = Math.max(1, Math.floor(canvas.clientWidth*dpr));
+  let h = Math.max(1, Math.floor(canvas.clientHeight*dpr));
+  // Cap the drawing-buffer area. On 4K / high-DPI screens the resolution setting can
+  // otherwise ask for a framebuffer so large it exhausts GPU memory, which makes the
+  // browser lose the WebGL context and appear to freeze. Scaling keeps the aspect ratio.
+  const area = w*h;
+  if(area > MAX_FRAMEBUFFER_PIXELS){
+    const s = Math.sqrt(MAX_FRAMEBUFFER_PIXELS/area);
+    w = Math.max(1, Math.floor(w*s));
+    h = Math.max(1, Math.floor(h*s));
+  }
   if(canvas.width!==w || canvas.height!==h){ canvas.width=w; canvas.height=h; }
 }
 function drawSectorGuides(){
@@ -2059,6 +2098,11 @@ function drawGroup(g){
 // Billboard the face sprites toward the camera; fill preallocated buffers only.
 function drawBillboards(translucentPass){
   gl.disable(gl.CULL_FACE);
+  // Ensure the batch buffers are large enough BEFORE we capture references to them.
+  // billboards.length is the upper bound of what this pass can emit; sizing here
+  // avoids a subtle bug where a later growth would leave `pos/uv/col` pointing at
+  // the old, smaller arrays and silently drop the extra sprites' vertices.
+  allocSpriteBatch(billboards.length);
   const right=[-Math.sin(cam.yaw),0,Math.cos(cam.yaw)];
   const runs=[];let vi=0;
   const pos=spriteBatch.fpos,uv=spriteBatch.fuv,col=spriteBatch.fcol,items=[];
@@ -2072,7 +2116,6 @@ function drawBillboards(translucentPass){
     items.push({sp,sx,sy,sz,w,h,d2,tex});
   }
   items.sort(translucentPass?(a,b)=>b.d2-a.d2:(a,b)=>a.d2-b.d2);
-  allocSpriteBatch(items.length);
   let curTex=null,start=0,count=0;
   const flushRun=()=>{if(count)runs.push({tex:curTex,start,count});};
   for(const o of items){
@@ -2097,8 +2140,12 @@ let lastTime=performance.now(), fpsTime=performance.now(), fpsFrames=0, fps=0;
 function loop(now){
   const dt = Math.min(0.05, (now-lastTime)/1000 || 0);
   lastTime = now;
-  update(dt);
-  if(viewMode==="2d") render2D(); else { render(); drawMinimap(); }
+  // While the GL context is lost, do no work: issuing GL calls against a dead
+  // context wastes the main thread and can keep the page unresponsive.
+  if(!glLost){
+    update(dt);
+    if(viewMode==="2d") render2D(); else { render(); drawMinimap(); }
+  }
   fpsFrames++;
   if(now-fpsTime > 500){ fps=Math.round(fpsFrames*1000/(now-fpsTime)); fpsFrames=0; fpsTime=now; }
   requestAnimationFrame(loop);                           // single RAF loop
@@ -2268,12 +2315,12 @@ optMapPalette.addEventListener("change",()=>{
   updatePaletteModeUi(true);
 });
 
-canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();setLog("WebGL context was lost. Rendering is paused safely; reload the map after the browser restores graphics.");});
+canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();glLost=true;setLog("WebGL context was lost. Rendering is paused safely; it will resume automatically when the browser restores graphics.");});
 canvas.addEventListener("webglcontextrestored",()=>{
   gl=null;program=null;whiteTex=null;worldGroups=[];sectorGuides={pos:null,col:null,n:0};wallSegments=[];collisionBySector=[];billboards=[];
   spriteBatch={pos:null,uv:null,col:null,cap:0,fpos:null,fuv:null,fcol:null};
   resources.textures.clear();resources.texturePixels=0;resources.textureBudgetWarned=false;fallbackTextures.clear();reset2DTextureCache();
-  try{initGL();if(mapData)buildWorld(mapData).catch(e=>log("WebGL restore failed: "+e.message,"bad"));}
+  try{initGL();if(mapData)buildWorld(mapData).catch(e=>log("WebGL restore failed: "+e.message,"bad"));glLost=false;}
   catch(e){log("WebGL restore failed: "+e.message,"bad");}
 });
 /* ============================ BOOTSTRAP ============================ */
