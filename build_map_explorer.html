@@ -123,6 +123,14 @@ input[type=range]{width:100%;height:22px;margin:0;background:transparent;accent-
 #cross:before{left:7px;top:0;width:2px;height:16px}
 #cross:after{left:0;top:7px;width:16px;height:2px}
 .hidden{display:none!important}
+/* Clean view (H): hides every overlay at once for an unobstructed / screenshot view.
+   Uses a body class so each overlay keeps its own state and returns unchanged on toggle. */
+body.clean-view #panel,body.clean-view #miniWrap,body.clean-view #hud,body.clean-view #help,body.clean-view #cross{display:none!important}
+#toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:40;pointer-events:none;
+  background:rgba(8,11,17,.92);border:1px solid var(--edge);border-radius:9px;padding:8px 14px;
+  color:#dbe6f7;font:12px/1.4 var(--mono);opacity:0;transition:opacity .18s ease;white-space:nowrap}
+#toast.show{opacity:1}
+#toast .key{display:inline-block;background:#1a2130;border:1px solid var(--edge);border-radius:5px;padding:1px 6px;color:var(--cyan);font-weight:600}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:#26303f;border-radius:5px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -231,8 +239,10 @@ input[type=range]{width:100%;height:22px;margin:0;background:transparent;accent-
   <span class="key">V</span> 2D/3D view ·
   <span class="key">M</span> minimap ·
   <span class="key">Tab</span> panel ·
+  <span class="key">H</span> hide overlays ·
   <span class="key">Esc</span> release
 </div>
+<div id="toast"></div>
 
 <script>
 /*! Earcut 2.2.4 — Copyright (c) 2016, Mapbox — ISC License.
@@ -321,6 +331,16 @@ const optCollision = $("optCollision");
 const optMarkers   = $("optMarkers");
 const optMapPalette= $("optMapPalette");
 const optArrowKeys = $("optArrowKeys");
+const toastEl = $("toast");
+let toastTimer = 0;
+// Brief centred message (survives clean-view so hiding the UI still gives feedback).
+function showToast(html){
+  if(!toastEl) return;
+  toastEl.innerHTML = html;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1600);
+}
 const textureModeHint = $("textureModeHint");
 const paletteModeHint = $("paletteModeHint");
 const resolutionSel= $("resolution");
@@ -1567,6 +1587,10 @@ document.addEventListener("keydown", e => {
   if(e.code==="KeyR") resetCamera();
   if(e.code==="KeyM" && viewMode==="3d" && mapData) miniWrap.classList.toggle("hidden");
   if(e.code==="Tab")  panelEl.classList.toggle("hidden");
+  if(e.code==="KeyH"){                                   // hide/show every overlay at once
+    const hidden = document.body.classList.toggle("clean-view");
+    showToast(hidden ? 'Overlays hidden · press <span class="key">H</span> to show' : "Overlays shown");
+  }
 });
 document.addEventListener("keyup", e => keys.delete(e.code));
 // If the window loses focus, is hidden, or a modal dialog steals focus (e.g. the
